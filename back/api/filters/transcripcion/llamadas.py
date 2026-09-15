@@ -1,4 +1,4 @@
-from api.database import option
+from api.database import result
 from api.models import FilterModel
 from helpers.sql import TABLE
 
@@ -12,7 +12,7 @@ def llamadas(filters: FilterModel):
         'IFNULL(CAST(CAST(Telefono AS INT64) AS STRING), \'-\')',
     ])
 
-    return option(
+    return result(
         f"""
         WITH id_provicional AS (
             SELECT ROW_NUMBER() OVER (ORDER BY fecha ASC) AS id,
@@ -23,11 +23,9 @@ def llamadas(filters: FilterModel):
             FROM {TABLE}
             WHERE COALESCE(Transcripcion_V4, transcripcion) IS NOT NULL AND {filters.get_query()}
         )
-        SELECT id, concat({concat_fields}) text
+        SELECT id, concat({concat_fields}) name,
+            IFNULL(CAST(CAST(Telefono AS INT64) AS STRING), '-') AS telefono
         FROM id_provicional
         ORDER BY Fecha DESC
-        LIMIT 300
-        """,
-        "id",
-        "text",
+        """
     )

@@ -1,9 +1,14 @@
 from api.database import result
+from api.models import FilterModel
 from helpers.sql import TABLE
+from google.cloud import bigquery
 
 
-def historial_telefono(telefono: str):
-    telefono_safe = str(telefono).replace("'", "").replace(";", "").strip()
+def historial_telefono(telefono: str, filters: FilterModel = None):
+    # El historial telefónico reúne llamadas de cualquier asesor; solo respeta
+    # los filtros temporales para mantener el contexto del período seleccionado.
+    historial_filters = filters.model_copy(update={"nombre_asesor": None}) if filters else None
+    filtro_query = historial_filters.get_query() if historial_filters else "TRUE"
     return result(
         f"""
         WITH todos AS (
@@ -17,7 +22,8 @@ def historial_telefono(telefono: str):
                 Telefono,
                 COALESCE(Transcripcion_V4, transcripcion) AS transcripcion_text
             FROM {TABLE}
-            WHERE COALESCE(Transcripcion_V4, transcripcion) IS NOT NULL
+                        WHERE COALESCE(Transcripcion_V4, transcripcion) IS NOT NULL
+                            AND {filtro_query}
         )
         SELECT
             id_global AS id,
@@ -28,7 +34,8 @@ def historial_telefono(telefono: str):
             IFNULL(Duracion_Estimada, '-') AS duracion_est,
             CASE WHEN transcripcion_text IS NOT NULL AND transcripcion_text != '' THEN TRUE ELSE FALSE END AS tiene_transcripcion
         FROM todos
-        WHERE CAST(CAST(Telefono AS INT64) AS STRING) = '{telefono_safe}'
+        WHERE CAST(CAST(Telefono AS INT64) AS STRING) = @telefono
         ORDER BY Fecha ASC
-        """
+        """,
+        [bigquery.ScalarQueryParameter("telefono", "STRING", str(telefono).strip())],
     )

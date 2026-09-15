@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Informe de Sesion - CL Tiene - 8 Sep 2026</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, sans-serif; color: #1e293b; background: #f8fafc; line-height: 1.6; }
+  .cover { padding: 72px 10%; color: white; background: linear-gradient(135deg, #0f172a, #312e81, #0f172a); }
+  .badge { display: inline-block; padding: 6px 14px; border: 1px solid rgba(252,50,118,.6); border-radius: 20px; color: #fda4af; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  h1 { margin: 28px 0 12px; font-size: 36px; }
+  .subtitle { max-width: 720px; color: #cbd5e1; }
+  main { max-width: 980px; margin: 0 auto; padding: 42px 28px 72px; }
+  section { margin-bottom: 34px; }
+  h2 { margin: 0 0 14px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; color: #0f172a; font-size: 22px; }
+  h3 { color: #475569; font-size: 15px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+  .card { padding: 18px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; }
+  .card strong { display: block; margin-bottom: 5px; color: #fc3276; }
+  table { width: 100%; border-collapse: collapse; background: white; font-size: 14px; }
+  th, td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
+  th { color: white; background: #0f172a; }
+  code { padding: 2px 5px; border-radius: 4px; color: #be123c; background: #f1f5f9; font-family: Consolas, monospace; }
+  .notice { padding: 14px 16px; border-left: 4px solid #f59e0b; border-radius: 6px; background: #fffbeb; }
+  .ok { padding: 14px 16px; border-left: 4px solid #16a34a; border-radius: 6px; background: #f0fdf4; }
+  .pending { padding: 14px 16px; border-left: 4px solid #64748b; border-radius: 6px; background: #f1f5f9; }
+  li { margin-bottom: 6px; }
+  footer { max-width: 980px; margin: 0 auto; padding: 0 28px 40px; color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="cover">
+  <span class="badge">Informe de sesion · 8 septiembre 2026</span>
+  <h1>Actualizacion documental y prototipo Mi Desempeño</h1>
+  <p class="subtitle">Registro exclusivo de los cambios realizados en esta sesion para revision posterior por Claude.</p>
+</header>
+<main>
+  <section>
+    <h2>Resumen ejecutivo</h2>
+    <div class="grid">
+      <div class="card"><strong>Rama actual</strong><code>feat/mi-desempeno</code></div>
+      <div class="card"><strong>Validacion</strong><span>Build frontend correcto y sintaxis Python validada.</span></div>
+      <div class="card"><strong>Estado Git</strong><span>Los cambios mas recientes siguen sin commit ni push; <code>main</code> no fue tocada.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cambios funcionales</h2>
+    <ul>
+      <li>Se agrego el historial de llamadas en <strong>Mi Desempeño</strong>, con fecha, hora, resultado, asesor, duracion y estado de transcripcion.</li>
+      <li>El selector y el historial respetan el asesor seleccionado y las fechas <code>Desde</code>/<code>Hasta</code>.</li>
+      <li>Se elimino el limite fijo de 300 llamadas; el contador muestra cuantas transcripciones hay en el periodo filtrado.</li>
+      <li>El historial muestra el telefono activo y reutiliza el patron visual de la pestaña Transcripciones.</li>
+      <li>El endpoint de llamadas ahora devuelve tambien <code>telefono</code>, manteniendo los campos <code>id</code> y <code>name</code>.</li>
+      <li>Se integro el bloque de metricas de una llamada: resultado, duracion real, duracion estimada, plan, turnos, saludo y WhatsApp.</li>
+      <li>Se reutilizo el boton de analisis con IA de <code>MetricasGrid</code> y se conservaron los filtros de asesor y fechas.</li>
+      <li>La ruta de Mi Desempeño queda dentro de <code>FiltersProvider</code> para soportar el componente reutilizado.</li>
+      <li>Para la prueba local, <code>src/config.js</code> apunta al backend <code>http://localhost:8000</code> y omite el token Firebase solo en localhost, porque el backend corre con <code>AUTH_ENABLED=0</code>.</li>
+      <li>Se añadieron dos modos de chat en Mi Desempeño: un agente general para métricas del asesor y un agente específico para la llamada seleccionada.</li>
+      <li>El agente específico recupera el contexto de la llamada desde backend mediante <code>llamada_id</code>; no recibe la transcripción directamente desde el navegador.</li>
+      <li>El agente conoce el asesor y período seleccionados y responde preguntas de identidad sin inventar información personal.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Documentacion revisada y actualizada</h2>
+    <p>Se revisaron la boveda <code>C:\proyectos\CLTieneBobeda</code> y el repositorio <code>C:\proyectos\CLTiene</code>. Se conservaron los informes historicos sin reescribir sus cifras.</p>
+    <table>
+      <thead><tr><th>Documento</th><th>Accion</th></tr></thead>
+      <tbody>
+        <tr><td><code>CLAUDE.md</code></td><td>Se actualizo el modelo vigente a <code>gpt-4o</code>, la seguridad de OpenAPI y la distincion entre venta real y venta inferida.</td></tr>
+        <tr><td><code>README.md</code></td><td>Se elimino la referencia actual a <code>routes_new.py</code> y se aclaro el modelo de produccion.</td></tr>
+        <tr><td><code>informe_tecnico.html</code></td><td>Se marco como documento historico sin cambiar sus cifras originales.</td></tr>
+        <tr><td>Informes anteriores</td><td>No se modificaron; representan cortes historicos.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Archivos tocados</h2>
+    <table>
+      <thead><tr><th>Archivo</th><th>Motivo</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td><code>src/pages/MiDesempeno.jsx</code></td><td>Historial y metricas de la llamada seleccionada.</td><td>Pendiente commit en <code>feat/mi-desempeno</code></td></tr>
+        <tr><td><code>src/components/Transcripciones/MetricasGrid.jsx</code></td><td>Acepta el query de Mi Desempeño para metricas y analisis IA.</td><td>Pendiente commit en <code>feat/mi-desempeno</code></td></tr>
+        <tr><td><code>src/App.jsx</code></td><td>Agrega <code>FiltersProvider</code> a la ruta.</td><td>Pendiente commit en <code>feat/mi-desempeno</code></td></tr>
+        <tr><td><code>back/api/filters/transcripcion/llamadas.py</code></td><td>Devuelve el telefono junto con cada llamada y elimina el limite fijo de 300.</td><td>Pendiente commit en <code>feat/mi-desempeno</code></td></tr>
+        <tr><td><code>back/api/filters/transcripcion/historial_telefono.py</code></td><td>Aplica los filtros de fechas y asesor al historial telefonico.</td><td>Pendiente commit en <code>feat/mi-desempeno</code></td></tr>
+        <tr><td><code>src/config.js</code></td><td>Configura backend local y evita esperar token Firebase durante la prueba local.</td><td>Pendiente commit en <code>feat/mi-desempeno</code></td></tr>
+        <tr><td><code>back/api/chat.py</code></td><td>Añade contexto de asesor/período y soporte para preguntas específicas mediante <code>llamada_id</code>.</td><td>Pendiente commit en <code>feat/mi-desempeno</code></td></tr>
+        <tr><td><code>informe_sesion_2026-09-08.html</code></td><td>Este informe de la sesion actual para revision posterior.</td><td>Archivo nuevo, pendiente commit</td></tr>
+        <tr><td><code>CLAUDE.md</code>, <code>README.md</code>, <code>informe_tecnico.html</code></td><td>Documentacion actualizada en una sesion anterior.</td><td>Contexto historico: commit <code>960841c</code> en <code>main</code></td></tr>
+        <tr><td><code>index.html</code>, <code>src/pages/Login.jsx</code></td><td>Favicon, logo de CL Tiene y textos de identidad.</td><td>Contexto historico: commits anteriores trasladados a <code>feat/mi-desempeno</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Validaciones</h2>
+    <div class="ok">Correcto: <code>npm run build</code>, <code>py_compile</code> de los endpoints modificados incluyendo <code>back/api/chat.py</code>, <code>git diff --check</code> y respuesta <code>200</code> de <code>/api/rendimiento_agente</code> local.</div>
+  </section>
+
+  <section>
+    <h2>Estado y aprobaciones pendientes</h2>
+    <div class="pending">
+      <ul>
+        <li>Los cambios actuales de Mi Desempeño y este informe no tienen commit ni push.</li>
+        <li>La rama de trabajo actual es <code>feat/mi-desempeno</code>; el commit documental <code>960841c</code> pertenece a <code>main</code>.</li>
+        <li>No se hizo deploy a Firebase ni a Cloud Run.</li>
+        <li>El archivo generado <code>.firebase/hosting.ZGlzdA.cache</code> permanece fuera de los commits.</li>
+        <li>Antes de publicar, conviene probar la ruta autenticada <code>/mi-desempeno</code> con distintos rangos de fechas y asesores.</li>
+        <li>El backend local debe iniciarse con <code>CLOUD_PROJECT=desarrollo-investigaciones</code> y CORS para el puerto Vite utilizado.</li>
+        <li>La sesión Firebase se guarda por origen/puerto; al cambiar entre <code>5173</code>, <code>5174</code> y <code>5175</code> puede ser necesario iniciar sesión de nuevo.</li>
+        <li>Los dos agentes IA están integrados y validados localmente; queda pendiente probarlos con una llamada seleccionada y el backend local activo.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reglas respetadas</h2>
+    <ul>
+      <li>No se modifico el SQL Server de la CUN.</li>
+      <li>No se alteraron datos de BigQuery.</li>
+      <li>No se reescribieron informes historicos.</li>
+      <li>No se hizo commit, push ni deploy de los cambios funcionales mas recientes.</li>
+    </ul>
+  </section>
+</main>
+<footer>Documento generado para el proyecto CL Tiene Dashboard · DivergencyAI SAS</footer>
+</body>
+</html>

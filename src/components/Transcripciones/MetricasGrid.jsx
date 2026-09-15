@@ -2,8 +2,8 @@ import { API_BASE, apiFetch } from '../../config';
 import React, { useState } from 'react';
 import { useFilters } from '../../FiltersContext';
 
-const MetricasGrid = ({ data, llamadaId }) => {
-    const { buildQuery } = useFilters();
+const MetricasGrid = ({ data, llamadaId, queryOverride = '' }) => {
+    const filterContext = useFilters();
     const [mostrar, setMostrar] = useState(false);
     const [cargando, setCargando] = useState(false);
     const [analisis, setAnalisis] = useState('');
@@ -24,7 +24,7 @@ const MetricasGrid = ({ data, llamadaId }) => {
         setMostrar(true);
         setCargando(true);
         try {
-            const params = buildQuery();
+            const params = queryOverride || filterContext?.buildQuery?.() || '';
             const query = params ? `?${params}` : '';
             const sep = params ? '&' : '?';
             const url = llamadaId && llamadaId !== 0

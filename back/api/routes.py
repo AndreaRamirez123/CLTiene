@@ -97,8 +97,8 @@ def api_metricas(id, filters: FilterModel = Depends()):
 
 
 @router.get("/api/transcripcion/historial/{telefono}")
-def api_historial_telefono(telefono: str):
-    return historial_telefono(telefono)
+def api_historial_telefono(telefono: str, filters: FilterModel = Depends()):
+    return historial_telefono(telefono, filters)
 
 
 # ------------------------------------------------------- #

@@ -1,6 +1,6 @@
 import { auth } from "./firebase";
 
-export const API_BASE = "https://cltiene-backend-293865702055.us-central1.run.app";
+export const API_BASE = "http://localhost:8000";
 
 // apiFetch: envoltura de fetch que adjunta el ID token de Firebase del usuario
 // logueado en el header Authorization, para que el backend (que ahora verifica
@@ -11,6 +11,8 @@ export const API_BASE = "https://cltiene-backend-293865702055.us-central1.run.ap
 // en el borde de una sesión que expira).
 export async function apiFetch(url, options = {}) {
   const headers = { ...(options.headers || {}) };
+  const esBackendLocal = API_BASE.startsWith("http://localhost") || API_BASE.startsWith("http://127.0.0.1");
+  if (esBackendLocal) return fetch(url, { ...options, headers });
   try {
     const user = auth.currentUser;
     if (user) headers["Authorization"] = `Bearer ${await user.getIdToken()}`;

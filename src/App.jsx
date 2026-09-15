@@ -49,7 +49,7 @@ function App() {
                 </FiltersProvider> : <Navigate to="/login" />} />
                 {/* PROTOTIPO — vista individual del asesor (aislada del dashboard) */}
                 <Route path="/mi-desempeno" element={usuario
-                    ? <ErrorBoundary><MiDesempeno /></ErrorBoundary>
+                    ? <FiltersProvider><ErrorBoundary><MiDesempeno /></ErrorBoundary></FiltersProvider>
                     : <Navigate to="/login" />} />
             </Routes>
         </Router>

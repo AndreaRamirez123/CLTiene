@@ -20,6 +20,7 @@ def rendimiento_agente(filters: FilterModel):
             IF(Duracion_Estimada = "Corta", 5, 0)
         ), 1) AS score_calidad,
         ROUND(SAFE_DIVIDE(SUM(efectiva), COUNT(*)) * 100, 2) AS contacto_pct,
+        ROUND(SAFE_DIVIDE(COUNTIF(Resultado_Llamada IN ('Contactado', 'Rechazado', 'Venta')), COUNT(*)) * 100, 2) AS contacto_efectivo,
         ROUND(SAFE_DIVIDE(COUNTIF(Resultado_Llamada = 'Venta'), COUNT(*)) * 100, 2) AS tasa_venta,
         -- TMO (tiempo hablado promedio) en segundos; solo llamadas con tiempo > 0
         CAST(ROUND(AVG(IF(
