@@ -1105,6 +1105,17 @@ def subir_bigquery(df):
     client = bigquery.Client(project=BQ_PROJECT)
     tabla  = f"{BQ_PROJECT}.{BQ_DATASET}.{BQ_TABLA}"
     df = sanitizar_columnas(df)
+    # Fechas como INTEGER en nanosegundos (contrato con el backend: el SQL usa
+    # DATETIME(TIMESTAMP_MICROS(DIV(Fecha, 1000))) y los filtros UNIX_MICROS*1000).
+    # pandas las trae como datetime64 y el autodetect de BigQuery las escribiría
+    # como TIMESTAMP según la versión de pandas/pyarrow — da igual la versión:
+    # convertirlas explícitamente a int64 (epoch en ns) mantiene el tipo estable.
+    # Ojo: pandas >= 3.0 usa datetime64[us] por defecto; se fuerza [ns] sobre el
+    # array numpy antes de verlo como int64 (si no, se guardarían µs y el backend
+    # quedaría 1000x corto). Series no tiene `.view` en pandas 3, por eso `.to_numpy()`.
+    for col in ("Fecha", "fecha_carga"):
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col]).astype("datetime64[ns]").to_numpy().view("int64")
     job_config = bigquery.LoadJobConfig(
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
         autodetect=True,

@@ -30,3 +30,6 @@ dist-ssr
 *.env
 # Firebase
 .firebase/
+
+# Artefactos generados (envío semanal)
+back/reporte_semanal_dryrun.pdf

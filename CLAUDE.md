@@ -224,6 +224,20 @@ oculta columnas/pasos de ventas en Resumen, Rendimiento, Inteligencia, Embudo e 
 | `GET /ia/reporte_completo` | `ReporteCompleto.jsx` | revisar |
 | `GET /ia/analisis_ranking` | `RankingIA.jsx` | revisar |
 
+## Envío semanal automático del reporte a Steven (2026-09-15, rama `feat/envio-reporte-semanal`, SIN desplegar)
+
+> Automatiza lo que Diego hacía a mano cada semana: generaba el Reporte Ejecutivo (Agente IA PRO → `GET /ia/reporte_completo`, HTML con gpt-4o) y enviaba el PDF (jsPDF del navegador) a **Steven Aldana** (`supervisor_contact@cltiene.com`). El PDF ya no se arma en el navegador: lo genera **Python (WeasyPrint)**.
+
+- **Arquitectura:** Cloud Run Job `cltiene-envio-reporte` (dispara `python enviar_reporte_semanal.py`) + **Cloud Scheduler** cada **lunes 07:00** (`0 7 * * 1`) → genera el reporte de la **semana pasada (lunes→domingo)**, adjunta **PDF (WeasyPrint)** + **resumen en el cuerpo**, envía por **SMTP**.
+- **`back/enviar_reporte_semanal.py`** (nuevo, script del job): (1) período = semana pasada; (2) **PREFLIGHT A (BD actualizada):** `MAX(DATE(TIMESTAMP_MICROS(DIV(Fecha,1000))))` ≥ domingo pasado y el período tiene filas — si no → error claro + exit 1, NO envía; (3) **PREFLIGHT B (no duplicado):** hash **md5 de `get_data_context`** (determinista, NO del HTML de la IA) contra la tabla **`call_center.cltiene_reportes_enviados`** (`fecha_desde, fecha_hasta, hash_datos, enviado_at`, auto-creada con `CREATE TABLE IF NOT EXISTS`) — mismo hash ya enviado → no reenvía, hash distinto → reenvío legítimo; (4) `generar_reporte_completo(FilterModel)` → HTML; (5) PDF; (6) `_extraer_resumen()` → bullets del Resumen Ejecutivo para el cuerpo; (7) `smtplib` → correo; (8) INSERT en la tabla de estado solo tras éxito. Flags: `--dry-run`, `--fecha-desde/--fecha-hasta`, `--no-preflight`, `--outdir`.
+- **`back/reporte_pdf.py`** (nuevo): HTML→PDF con **WeasyPrint** — limpia el fondo oscuro de la IA (`rgb(15,23,42)`→claro, igual que `limpiarHTML` del frontend), convierte el semáforo 🟢🟡🔴→palabra (como el `clean()` de ReporteCompleto.jsx) + CSS branding CL Tiene (acento `#FC3276`, tablas zebra, footer "Confidencial" + nº de página). Logo en `back/assets/logo_cl_tiene.png`.
+- **SMTP:** `smtp.office365.com:587` (Microsoft 365 del dominio `@cun.edu.co`), remitente **`diego_ojeda@cun.edu.co`** (`EMAIL_FROM_NAME` = "Diego Ojeda — DivergencyAI") → `EMAIL_TO` default `supervisor_contact@cltiene.com`. ⚠️ **SMTP AUTH:** Microsoft desactiva la auth básica por defecto; si da `535 5.7.139`, el admin CUN debe habilitarla solo para ese buzón (`Set-CASMailbox diego_ojeda -SmtpClientAuthenticationDisabled $false`) o usar **contraseña de aplicación** (MFA). **`SMTP_PASS` va en Secret Manager** (`smpt-diego-cun`), nunca en env plano.
+- **Kill-switch:** `REPORTE_ENABLED=0` → el job genera el PDF pero **NO envía** (patrón tipo `AUTH_ENABLED`). Deploy en 2 fases: primero `0` (probar ejecución), luego `1` cuando exista `SMTP_PASS` válida.
+- **`back/requirements.txt`:** +`weasyprint==62.3` +`pydyf==0.11.0` (⚠️ pin: 62.3 revienta con pydyf ≥ 0.12, `AttributeError: 'super' object has no attribute 'transform'`). **`back/Dockerfile`:** +libs `libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 fonts-dejavu` (PAra WeasyPrint en Linux). El job reusa la imagen del backend con `--command python --args enviar_reporte_semanal.py`.
+- **Local (Windows):** WeasyPrint necesita **GTK3 Runtime** (`winget install tschoonj.GTKForWindows`) y que `$env:PATH` incluya `C:\Program Files\GTK3-Runtime Win64\bin` antes de importar. Correr con `$env:PYTHONIOENCODING="utf-8"`.
+- **Verificado:** 25 tests (6 nuevos), dry-run real 17-23 ago → PDF 40KB/3 páginas con header+Resumen, preflight A bloquea BD desactualizada (7-13 sep con MAX=29-ago → error), SMTP host accesible (STARTTLS+AUTH). **PENDIENTE: commit+push de la rama, deploy del job/scheduler, definir `SMTP_PASS`.**
+- **Nota:** el job importa los módulos del backend directamente (NO llama al API HTTP) → **no necesita token Firebase**. Solo lee BigQuery (no toca el SQL Server de la CUN).
+
 ## Autenticación — token Firebase verificado en el backend (2026-09-02, rama `feat/auth-firebase`, DESPLEGADO)
 
 > Cierra el hueco que marcó la revisión externa de seguridad: el frontend **ya tenía login Firebase** (`src/pages/Login.jsx` + `App.jsx` con `onAuthStateChanged`), pero el **backend NO verificaba nada** → cualquiera con la URL de Cloud Run bajaba todos los datos saltándose el login. Y el CORS era `allow_origins=["*"]` + `allow_credentials=True` (abierto e inválido).
@@ -289,6 +303,8 @@ firebase deploy --only hosting:cltiene-dashboard
 - **Tradeoff:** una instancia idle 24/7 (costo bajo continuo, pocos USD/mes). Si la CUN lo cuestiona por costo, revertir con `--min-instances=0` (alternativa más barata evaluada: Cloud Scheduler con ping en horario laboral).
 
 ## Cuándo sacar un informe de sesión (criterio, definido 2026-07-15)
+
+> 📚 **Bóveda de conocimiento en `CLTieneBobeda/`** (Obsidian): incluye la sección **`Trabajo con IA/`** — perfil personal de cada IA con sus **memorias fechadas por sesión** (índice, perfil de opencode, manual maestro). **Cualquier IA nueva: leer `Trabajo con IA/02 - Manual maestro para agentes de IA` y crear su propio perfil** (`Trabajo con IA/01 - Perfil de <nombre>`) al entrar, editando solo el suyo.
 
 Dos ritmos distintos, no confundir:
 - **Bitácora (nota semanal en el Tablero de trabajo de Diego):** SEMANAL, ligera ("en qué trabajé esta semana").
@@ -710,6 +726,15 @@ Al revisar el ChatVisor pueden aparecer dos problemas distintos con causas y sol
 - **Causa real:** esas 7.142 filas son el **lote oct-2025** (10-oct → 7-nov, ANTES de que la fuente cambiara a ISO el 8-nov). Vienen en formato regional español de Windows: `'DD/MM/YYYY h:mm:ss a. m./p. m.'` con **espacio angosto U+202F** (doble). SQL NO lo parsea: probado `TRY_CONVERT` 103/105/default, `TRY_PARSE es-CO/en-US` y normalización con `REPLACE(NCHAR(8239))` → **todos 0** (el U+202F no se deja reemplazar por collation).
 - **Fix (`subir_datos.py`):** nueva `parse_fecha_es()` (normaliza espacios Unicode con `unicodedata.category=='Zs'` + regex + 12h→24h) parsea el formato en **Python** (7.142/7.142 OK). El query principal (ISO 120) **NO se tocó**; se agregó un **query fallback aditivo** (`sql_fb`, `WHERE TRY_CONVERT(120) IS NULL AND fecha LIKE '%/%/%'`) que trae esas filas crudas y se concatenan tras parsear en Python. Columnas compartidas vía `_COLS_MEDIO` (sin duplicar). Se agregó **log** de recuperadas/descartadas (punto válido de Copilot).
 - **Nota:** las 7.142 son **solo metadata** (0 transcripción → $0 OpenAI, sin V4/atribución); solo suman volumen/estatus de oct-2025 y extienden la historia. Aparecen **4 asesores nuevos** (rotación: gente que salió antes de nov).
+
+### Carga de datos 2026-09-16 (hecha, con gpt-4o + 2 keys) — ⚠️ incluye fix preventivo de tipo `Fecha`
+- Corrida **incremental** con `gpt-4o` + 2 keys, Diego en la red CUN. Juan Manuel cargó datos nuevos al SQL (hasta 6-sep).
+- **Estado previo:** SQL 57.947 crudas / máx 6-sep; BigQuery 48.842 / 29-ago. → ~1.038 filas nuevas (30-ago→6-sep).
+- **Resultado:** BigQuery 48.842 → **49.880 filas** (+1.038 netas). Dedup quitó **8.067 (13.9%)**. Historia **2025-10-10 → 2026-09-06**. Backup: `cltiene_llamadas_procesadas_backup_20260916` (estado previo, 48.842).
+- **Verificado** (BQ): 49.880 filas, **27 asesores**, 0 Cuenta NULL, `MAX(DATE(TIMESTAMP_MICROS(DIV(Fecha,1000))))` = **2026-09-06** (la fórmula del backend funciona).
+- **🔴 Fix preventivo en `subir_bigquery()` (evita romper prod):** el venv local nuevo (pandas **3.x**, py3.14) autodetecta las fechas como `TIMESTAMP` (pandas ≥3 usa `datetime64[us]`), pero el backend depende de `Fecha`/`fecha_carga` como **INTEGER en nanosegundos** (`DIV(Fecha,1000)`). Se detectó porque el schema de la primera subida difería del backup (`Fecha` INTEGER → TIMESTAMP). **Fix:** en `subir_bigquery()` se convierten explícitamente a `int64` ns: `pd.to_datetime(df[col]).astype("datetime64[ns]").to_numpy().view("int64")` (⚠️ con pandas 3 NO funciona `Series.view`, ni `.astype("int64")` directo, ni `.values.view()` sin forzar `[ns]` → guardaría µs, 1000× corto). Resultado: schema idéntico al backup, `Fecha` y `fecha_carga` en ns.
+  - Sin esto, TODOS los endpoints del dashboard fallarían (`DIV(TIMESTAMP,...)` no existe y el valor quedaría 1000× corto). El run de producción (pandas 2.2/py3.11, como el 09-03) es inmune; el peligro es reproducir con el venv nuevo.
+- ⚠️ **Redisperando librerías:** en este venv no hay wheel de pandas 2.2.x para py3.14 (compila de fuente y falla) → se usa pandas 3.x + el fix de arriba. Correr con `PYTHONIOENCODING=utf-8` (nota de carga anterior). Errores SSL intermitentes a BigQuery por la red CUN: reintentar.
 
 ### Carga de datos 2026-09-03 (hecha, con gpt-4o + 2 keys)
 - Corrida **incremental** con `gpt-4o` + 2 keys, Diego en la red CUN. Juan Manuel cargó datos nuevos al SQL (hasta **29-ago**).
