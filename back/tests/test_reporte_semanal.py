@@ -10,7 +10,13 @@ os.environ.setdefault("CLOUD_PROJECT", "test-project")
 import unittest
 from datetime import date
 
-from enviar_reporte_semanal import calcular_semana_pasada
+from enviar_reporte_semanal import (
+    calcular_semana_pasada,
+    _semana_desde_max,
+    _es_fresca,
+    _destinatarios,
+    _alertar_stale,
+)
 from reporte_pdf import _limpiar_fondo_oscuro, _emojis_a_texto, _badges_tablas, _panelizar_resumen
 
 
@@ -25,6 +31,45 @@ class TestSemanaPasada(unittest.TestCase):
         self.assertEqual((hasta - desde).days, 6)
         self.assertEqual(desde.weekday(), 0)   # lunes
         self.assertEqual(hasta.weekday(), 6)   # domingo
+
+
+class TestDeteccionAutomatica(unittest.TestCase):
+    def test_semana_desde_max_domingo(self):
+        # max=domingo 06-sep → la semana completa ESE domingo (31-ago → 06-sep)
+        desde, hasta = _semana_desde_max(date(2026, 9, 6))
+        self.assertEqual(hasta, date(2026, 9, 6))
+        self.assertEqual(desde, date(2026, 8, 31))
+        self.assertEqual(desde.weekday(), 0)
+        self.assertEqual(hasta.weekday(), 6)
+
+    def test_semana_desde_max_lunes(self):
+        # max=lunes 07-sep → retrocede al último domingo 06-sep
+        desde, hasta = _semana_desde_max(date(2026, 9, 7))
+        self.assertEqual(hasta, date(2026, 9, 6))
+        self.assertEqual(desde, date(2026, 8, 31))
+
+    def test_semana_desde_max_miercoles(self):
+        # max=miércoles 09-sep → misma semana completa 31-ago → 06-sep
+        desde, hasta = _semana_desde_max(date(2026, 9, 9))
+        self.assertEqual(hasta, date(2026, 9, 6))
+        self.assertEqual(desde, date(2026, 8, 31))
+
+    def test_es_fresca_rangos(self):
+        hoy = date(2026, 9, 21)  # lunes
+        self.assertTrue(_es_fresca(date(2026, 9, 20), hoy))   # domingo pasado
+        self.assertTrue(_es_fresca(date(2026, 9, 14), hoy))   # límite inferior incluido
+        self.assertFalse(_es_fresca(date(2026, 9, 13), hoy))  # justo fuera de límite
+        self.assertFalse(_es_fresca(date(2026, 9, 6), hoy))   # BD vieja → NO fresca
+
+    def test_destinatarios_csv(self):
+        self.assertEqual(
+            _destinatarios("a@x.co, b@y.co"), ["a@x.co", "b@y.co"])
+        self.assertEqual(
+            _destinatarios("Juan_ganicac@cun.edu.co,Juan_marin@cun.edu.co"),
+            ["Juan_ganicac@cun.edu.co", "Juan_marin@cun.edu.co"],
+        )
+        self.assertEqual(_destinatarios("solo@x.co"), ["solo@x.co"])
+        self.assertEqual(_destinatarios(""), [])
 
 
 class TestLimpiarFondo(unittest.TestCase):
@@ -86,6 +131,45 @@ class TestPanelizarResumen(unittest.TestCase):
     def test_limpio_no_toca(self):
         html = "<p>Sin resumen</p>"
         self.assertEqual(_panelizar_resumen(html), html)
+
+
+class TestKillSwitchAlerta(unittest.TestCase):
+    """ALERTA_ENABLED es kill-switch independiente del envío del reporte."""
+
+    def test_alerta_no_se_envia_con_switch_apagado(self):
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"ALERTA_ENABLED": "0"}, clear=False), \
+                mock.patch("enviar_reporte_semanal._crear_tabla_alertas") as crear, \
+                mock.patch("enviar_reporte_semanal._alerta_enviada_hoy") as hoy, \
+                mock.patch("enviar_reporte_semanal._enviar_alerta_stale") as enviar, \
+                mock.patch("enviar_reporte_semanal._registrar_alerta") as reg:
+            _alertar_stale(date(2026, 9, 6))
+        crear.assert_not_called()
+        hoy.assert_not_called()
+        enviar.assert_not_called()
+        reg.assert_not_called()
+
+    def test_alerta_se_envia_y_registra_con_switch_encendido(self):
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"ALERTA_ENABLED": "1"}, clear=False), \
+                mock.patch("enviar_reporte_semanal._crear_tabla_alertas"), \
+                mock.patch("enviar_reporte_semanal._alerta_enviada_hoy", return_value=False), \
+                mock.patch("enviar_reporte_semanal._enviar_alerta_stale") as enviar, \
+                mock.patch("enviar_reporte_semanal._registrar_alerta") as reg:
+            _alertar_stale(date(2026, 9, 6))
+        enviar.assert_called_once()
+        reg.assert_called_once()
+
+    def test_dedup_diario_no_reenvia(self):
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"ALERTA_ENABLED": "1"}, clear=False), \
+                mock.patch("enviar_reporte_semanal._crear_tabla_alertas"), \
+                mock.patch("enviar_reporte_semanal._alerta_enviada_hoy", return_value=True), \
+                mock.patch("enviar_reporte_semanal._enviar_alerta_stale") as enviar, \
+                mock.patch("enviar_reporte_semanal._registrar_alerta") as reg:
+            _alertar_stale(date(2026, 9, 6))
+        enviar.assert_not_called()
+        reg.assert_not_called()
 
 
 if __name__ == "__main__":
