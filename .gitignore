@@ -33,3 +33,6 @@ dist-ssr
 
 # Artefactos generados (envío semanal)
 back/reporte_semanal_dryrun.pdf
+# PDF de los informes segmentados: salida de producción, se regeneran con `--solo-pdf`.
+# Los HTML sidecar sí se versionan (sirven de auditoría).
+back/reportes_segmentados/*.pdf

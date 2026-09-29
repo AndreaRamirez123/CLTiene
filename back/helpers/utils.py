@@ -23,6 +23,12 @@ def _esc(value) -> str:
 # (defensa extra: un valor no-fecha no puede colarse al TIMESTAMP()).
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# Valores centinela del filtro `seguimiento_llamada` que significan "llamadas SIN
+# dirección registrada" (Tipo_Llamada IS NULL). El origen deja ese campo vacío en
+# ~49% de las llamadas; sin este bucket, cualquier informe "Entrantes vs Salientes"
+# se leería como si el 100% tuviera dirección.
+_SIN_DIRECCION = {"null", "none", "sin_direccion", "sin direccion", "sin dirección"}
+
 
 def filters(filters: dict) -> dict:
     filtros_object = {}
@@ -81,7 +87,14 @@ def filters(filters: dict) -> dict:
             filtros_string.append(f"tipo = '{_esc(value)}'")
 
         if key == "seguimiento_llamada":
-            filtros_string.append(f"Tipo_Llamada = '{_esc(value)}'")
+            # Centinelas para el bucket "Sin dirección": ~49% del histórico NO tiene
+            # dirección registrada (viene vacía del origen), que el dropdown del
+            # dashboard no ofrece. Se comparan en minúsculas contra el texto real
+            # de la columna, así que no colisionan con 'Entrante'/'Saliente'.
+            if str(value).strip().lower() in _SIN_DIRECCION:
+                filtros_string.append("Tipo_Llamada IS NULL")
+            else:
+                filtros_string.append(f"Tipo_Llamada = '{_esc(value)}'")
 
         if key == "transcripcion" and value == "true":
             filtros_string.append("transcripcion is not null")
@@ -101,6 +114,14 @@ def filters(filters: dict) -> dict:
     return result
 
 
+def es_informe_de_servicio(filters=None) -> bool:
+    """True si el filtro activo es de SERVICIO (no de ventas). Es la bandera que
+    usa el contexto para quitarle al informe toda la métrica de ventas."""
+    if filters is None:
+        return False
+    return (getattr(filters, "tipo_llamada", None) or "").strip().lower() == "servicio"
+
+
 def contexto_tipo_llamada(filters=None):
     """
     Instrucción de contexto para la IA según el filtro tipo_llamada.
@@ -114,15 +135,30 @@ def contexto_tipo_llamada(filters=None):
     if tipo == "servicio":
         return (
             "CONTEXTO CRÍTICO: Estás analizando ÚNICAMENTE llamadas de SERVICIO/ATENCIÓN, "
-            "NO de ventas. NO menciones ventas, conversión, tasa de cierre, 'perfil ganador de ventas' "
-            "ni metas comerciales. Enfócate en calidad de atención, resolución de solicitudes, "
+            "NO de ventas. Enfócate en calidad de atención, resolución de solicitudes, "
             "asistencias gestionadas, efectividad del contacto y satisfacción del cliente. "
-            "La métrica de éxito es la efectividad del servicio, no la venta.\n\n"
+            "La métrica de éxito es la efectividad del servicio, no la venta.\n"
+            "PROHIBIDO en TODO el informe (cualquier sección, tabla, semáforo, resumen o meta):\n"
+            "- la métrica 'Posibles ventas' y cualquier cifra de ventas o conversión "
+            "(en este informe el contexto NO la incluye: es servicio, no venta);\n"
+            "- la columna 'Posibles ventas' de la tabla de Productivity por Asesor;\n"
+            "- la fila 'Posibles ventas' del Tablero de Indicadores y su semáforo;\n"
+            "- la línea 'Posibles ventas' de la nota 'Rangos del semáforo'.\n"
+            "El Tablero de Indicadores de este informe lleva 7 filas (las 7 primeras) y el "
+            "análisis de metas se hace sobre CALIDAD DE ATENCIÓN (llamadas de calidad, contacto "
+            "efectivo, saludo, participación del cliente, score de calidad, tiempo de resolución).\n\n"
         )
     return ""
 
 
-def get_data_context(where="1=1"):
+def get_data_context(where="1=1", ocultar_ventas=False):
+    """Contexto de datos en texto para alimentar los prompts de IA.
+
+    `ocultar_ventas=True` (informe de SERVICIO) omite por completo la métrica
+    'Posibles ventas': su línea del encabezado, su semáforo, su rango y la
+    columna del desglose por asesor. Con el valor por defecto la salida es
+    idéntica a la anterior (solo se AGREGA el bloque de DIRECCIÓN).
+    """
 
     query = f"""
     WITH base AS (
@@ -130,6 +166,7 @@ def get_data_context(where="1=1"):
             efectiva,
             Resultado_Llamada,
             Estado_de_la_LLamada,
+            Tipo_Llamada,
             Duracion_Estimada,
             Plan_Mencionado,
             Saludo_Completo,
@@ -153,10 +190,16 @@ def get_data_context(where="1=1"):
     resumen AS (
         SELECT
             COUNT(*) total,
-            SUM(CASE WHEN efectiva = 1.0 THEN 1 ELSE 0 END) contactadas,
-            SUM(CASE WHEN Resultado_Llamada = 'Venta' THEN 1 ELSE 0 END) ventas,
+            -- COALESCE: con 0 filas SUM() devuelve NULL y el formateo del texto
+            -- reventaría (un bucket de filtro puede quedar vacío, p.ej. 'Sin dirección').
+            COALESCE(SUM(CASE WHEN efectiva = 1.0 THEN 1 ELSE 0 END), 0) contactadas,
+            COALESCE(SUM(CASE WHEN Resultado_Llamada = 'Venta' THEN 1 ELSE 0 END), 0) ventas,
             CAST(ROUND(AVG(IF(dur_seg > 0, dur_seg, NULL))) AS INT64) tmo_seg,
-            ROUND(SAFE_DIVIDE(SUM(cli_turns), SUM(tot_turns)) * 100, 1) participacion_cliente,
+            -- Conteo de llamadas que SÍ traen duración: el origen no manda
+            -- 'Tiempo de Conversacion' para las ENTRANTES, así que el TMO nunca
+            -- cubre el total y hay que decirlo (y no marcarlo en rojo).
+            COALESCE(COUNTIF(dur_seg > 0), 0) tmo_n,
+            COALESCE(ROUND(SAFE_DIVIDE(SUM(cli_turns), SUM(tot_turns)) * 100, 1), 0) participacion_cliente,
             -- Score de Calidad (0-100): promedio de las 7 categorías sobre las llamadas
             -- EVALUADAS (con transcripción), igual que el KPI del dashboard.
             COALESCE(ROUND((
@@ -173,10 +216,10 @@ def get_data_context(where="1=1"):
 
     calidad AS (
         SELECT
-            SUM(CASE WHEN Saludo_Completo = 'Sí' THEN 1 ELSE 0 END) saludo,
-            SUM(CASE WHEN ofrecimiento_solucion = 1 THEN 1 ELSE 0 END) beneficios,
-            SUM(CASE WHEN Ofrecio_WhatsApp = 'Sí' THEN 1 ELSE 0 END) whatsapp,
-            SUM(CASE WHEN cierre_servicio = 1 THEN 1 ELSE 0 END) despedida
+            COALESCE(SUM(CASE WHEN Saludo_Completo = 'Sí' THEN 1 ELSE 0 END), 0) saludo,
+            COALESCE(SUM(CASE WHEN ofrecimiento_solucion = 1 THEN 1 ELSE 0 END), 0) beneficios,
+            COALESCE(SUM(CASE WHEN Ofrecio_WhatsApp = 'Sí' THEN 1 ELSE 0 END), 0) whatsapp,
+            COALESCE(SUM(CASE WHEN cierre_servicio = 1 THEN 1 ELSE 0 END), 0) despedida
         FROM base
     ),
 
@@ -185,6 +228,12 @@ def get_data_context(where="1=1"):
         FROM base
         WHERE Estado_de_la_LLamada IS NOT NULL AND Estado_de_la_LLamada != ''
         GROUP BY Estado_de_la_LLamada
+    ),
+
+    direccion AS (
+        SELECT Tipo_Llamada, COUNT(*) total
+        FROM base
+        GROUP BY Tipo_Llamada
     ),
 
     resultados AS (
@@ -241,6 +290,14 @@ def get_data_context(where="1=1"):
         ) estatus,
 
         ARRAY(
+            SELECT AS STRUCT
+                IFNULL(NULLIF(TRIM(Tipo_Llamada), ''), 'Sin dirección') direccion,
+                total
+            FROM direccion
+            ORDER BY total DESC
+        ) direccion,
+
+        ARRAY(
             SELECT AS STRUCT *
             FROM resultados
             ORDER BY total DESC
@@ -271,9 +328,11 @@ def get_data_context(where="1=1"):
                 sin_contacto,
                 ROUND(SAFE_DIVIDE(efectivas,llamadas)*100,2) exito_pct,
                 ROUND(SAFE_DIVIDE(contactadas,llamadas)*100,1) contacto_pct,
-                ROUND(SAFE_DIVIDE(contactado,llamadas)*100,1) contactado_pct,
+                COALESCE(ROUND(SAFE_DIVIDE(contactado,llamadas)*100,1), 0) contactado_pct,
                 -- Saludo%: (Sí+Parcial) sobre las contactadas (conversación real), tope 100%
-                LEAST(ROUND(SAFE_DIVIDE(saludo_ok, NULLIF(contactado,0))*100,0), 100) saludo_ok_pct
+                -- COALESCE: si el asesor no tuvo ninguna llamada contactada, el cociente es
+                -- NULL y el informe imprimiría "None%" (se muestra 0, que es lo real).
+                COALESCE(LEAST(ROUND(SAFE_DIVIDE(saludo_ok, NULLIF(contactado,0))*100,0), 100), 0) saludo_ok_pct
             FROM asesores
             ORDER BY llamadas DESC
         ) asesores,
@@ -289,9 +348,12 @@ def get_data_context(where="1=1"):
     # row = list(job.result())[0]
     row = dict(list(job.result())[0])
 
-    total = row["resumen"]["total"]
-    contactadas = row["resumen"]["contactadas"]
-    ventas = row["resumen"]["ventas"]
+    # `or 0`: un bucket de filtro puede devolver 0 filas y entonces los agregados
+    # llegan como None (el `,` de f-string y las divisiones reventarían). El SQL ya
+    # trae COALESCE; esto es la segunda red de seguridad.
+    total = int(row["resumen"]["total"] or 0)
+    contactadas = int(row["resumen"].get("contactadas") or 0)
+    ventas = int(row["resumen"].get("ventas") or 0)
 
     # TMO en formato legible M:SS (minutos:segundos), consistente en todo el reporte.
     # Si supera la hora, antepone las horas.
@@ -304,7 +366,12 @@ def get_data_context(where="1=1"):
         return f"{seg // 60}:{seg % 60:02d}"
 
     tmo_global = _fmt_tmo(row["resumen"].get("tmo_seg"))
-    participacion = row["resumen"].get("participacion_cliente")
+    participacion = row["resumen"].get("participacion_cliente") or 0
+
+    def _pct(n):
+        """Porcentaje seguro: un filtro puede dejar 0 filas (total=0) y dividir
+        reventaría el formateo del contexto."""
+        return (n / total * 100) if total else 0
 
     # Traducción de los estados crudos del marcador a etiquetas de negocio
     estatus_map = {
@@ -319,6 +386,13 @@ def get_data_context(where="1=1"):
     # Semáforos calculados en código (umbrales fijos) → deterministas y consistentes
     # entre informes. La IA solo debe copiarlos, no recalcularlos.
     tmo_seg = int(row["resumen"].get("tmo_seg") or 0)
+    # TMO sin dato: el origen no trae 'Tiempo de Conversacion' para las ENTRANTES
+    # (0 de 189 en la semana del 14-20 sep, 0% en todos los meses). Antes el None
+    # se coercionaba a 0 y caía en la rama 🔴, comunicando "TMO malo" cuando en
+    # realidad no hay nada que medir. Sin dato -> ⚪ (gris, "N/D" en el PDF), nunca rojo.
+    tmo_n = int(row["resumen"].get("tmo_n") or 0)
+    tmo_sin_dato = tmo_n == 0
+    tmo_cubierto = 100 * tmo_n / total if total else 0
     part = participacion or 0
     contact_pct = contactadas / total * 100 if total else 0
     pv_pct = ventas / total * 100 if total else 0
@@ -329,24 +403,40 @@ def get_data_context(where="1=1"):
     ce_pct = ce_cont / total * 100 if total else 0
     sem_contact = "🔴" if contact_pct < 10 else ("🟡" if contact_pct <= 20 else "🟢")
     sem_ce = "🔴" if ce_pct < 40 else ("🟡" if ce_pct <= 60 else "🟢")
-    sem_tmo = "🟢" if 120 <= tmo_seg <= 240 else ("🟡" if (60 <= tmo_seg < 120 or 240 < tmo_seg <= 300) else "🔴")
+    sem_tmo = ("⚪" if tmo_sin_dato else
+               "🟢" if 120 <= tmo_seg <= 240 else
+               ("🟡" if (60 <= tmo_seg < 120 or 240 < tmo_seg <= 300) else "🔴"))
     sem_part = "🟢" if 40 <= part <= 60 else ("🟡" if (30 <= part < 40 or 60 < part <= 70) else "🔴")
     sem_pv = "🔴" if pv_pct < 2 else ("🟡" if pv_pct <= 5 else "🟢")
     sem_calidad = "🔴" if calidad < 30 else ("🟡" if calidad <= 60 else "🟢")
 
     ctx = f"""CALL CENTER CL TIENE SOLUCIONES:
     - Total llamadas (marcaciones): {total:,}
-    - Llamadas de calidad (score de calidad del asesor >= 80%; NO es contacto): {contactadas:,} ({contactadas/total*100:.1f}%)
+    - Llamadas de calidad (score de calidad del asesor >= 80%; NO es contacto): {contactadas:,} ({_pct(contactadas):.1f}%)
     - Contacto efectivo (se habló con la persona): {ce_cont:,} ({ce_pct:.1f}%)
-    - Posibles ventas (inferidas de la transcripción, NO es venta cerrada real): {ventas:,} ({ventas/total*100:.2f}%)
-    - TMO (tiempo medio de operación / conversación): {tmo_global}
-    - Participación del cliente (% de turnos hablados por el cliente): {participacion}%
+"""
+    if not ocultar_ventas:
+        ctx += (
+            "    - Posibles ventas (inferidas de la transcripción, NO es venta cerrada real): "
+            f"{ventas:,} ({_pct(ventas):.2f}%)\n"
+        )
+    if tmo_sin_dato:
+        ctx += ("    - TMO (tiempo medio de operación / conversación): N/D — NO SE PUEDE CALCULAR. "
+                f"Las {total:,} llamadas de este bloque son entrantes y el archivo de origen no "
+                "incluye el campo de duración. NO lo interpretes como un TMO malo ni lo compares "
+                "con otros períodos: no hay dato.\n")
+    else:
+        ctx += (f"    - TMO (tiempo medio de operación / conversación): {tmo_global} "
+                f"(promediado sobre {tmo_n:,} de {total:,} llamadas = {tmo_cubierto:.1f}% de "
+                "cobertura; el resto son entrantes sin campo de duración). Cuando cites el TMO, "
+                "dí siempre sobre qué llamadas se midió y NO lo presentes como el de todas.\n")
+    ctx += f"""    - Participación del cliente (% de turnos hablados por el cliente): {participacion}%
     - Calidad (score 0-100, promedio de las 7 categorías sobre llamadas evaluadas): {calidad}/100
 
     VALORES PARA EL TABLERO (usa EXACTO estos):
-    - Llamadas de calidad: {contactadas/total*100:.1f}%
+    - Llamadas de calidad: {_pct(contactadas):.1f}%
     - Contacto efectivo: {ce_pct:.1f}%
-    - Saludo: {row["calidad"]["saludo"]}
+    - Saludo: {row["calidad"].get("saludo") or 0}
     - Calidad: {calidad}/100
 
     SEMÁFOROS YA CALCULADOS (cópialos EXACTO en el Tablero de Indicadores, NO los recalcules):
@@ -357,15 +447,21 @@ def get_data_context(where="1=1"):
     - Participación cliente: {sem_part}
     - Saludo: 🔴
     - Calidad: {sem_calidad}
-    - Posibles ventas: {sem_pv}
+"""
+    if not ocultar_ventas:
+        ctx += f"    - Posibles ventas: {sem_pv}\n"
 
+    ctx += f"""
     RANGOS DEL SEMÁFORO (reprodúcelos TAL CUAL como nota/leyenda bajo el Tablero, para que el color quede justificado; NO uses los signos < ni > ):
     - Llamadas de calidad: 🟢 más de 20% · 🟡 10 a 20% · 🔴 menos de 10%
     - Contacto efectivo: 🟢 más de 60% · 🟡 40 a 60% · 🔴 menos de 40%
-    - TMO: 🟢 2 a 4 min · 🟡 1 a 2 o 4 a 5 min · 🔴 menos de 1 o más de 5 min
+    - TMO: 🟢 2 a 4 min · 🟡 1 a 2 o 4 a 5 min · 🔴 menos de 1 o más de 5 min · ⚪ sin dato (el origen no trae duración para las entrantes; NO es un TMO malo)
     - Participación cliente: 🟢 40 a 60% · 🟡 30 a 40 o 60 a 70% · 🔴 menos de 30 o más de 70%
-    - Posibles ventas: 🟢 más de 5% · 🟡 2 a 5% · 🔴 menos de 2%
+"""
+    if not ocultar_ventas:
+        ctx += "    - Posibles ventas: 🟢 más de 5% · 🟡 2 a 5% · 🔴 menos de 2%\n"
 
+    ctx += """
     ESTATUS DE LLAMADAS (marcador):
     """
 
@@ -373,6 +469,21 @@ def get_data_context(where="1=1"):
         etiqueta = estatus_map.get(e["Estado_de_la_LLamada"], e["Estado_de_la_LLamada"])
         pct = e["total"] / total * 100 if total else 0
         ctx += f"{etiqueta}: {e['total']} ({pct:.1f}%)\n"
+
+    # DIRECCIÓN de la llamada. Solo Entrantes/Salientes: el bucket "Sin dirección"
+    # (Tipo_Llamada vacío) es un hueco del origen y se excluyó de los informes a
+    # pedido del usuario — el corte que importa es Ventas vs Servicio.
+    _dir = {d["direccion"]: d["total"] for d in row.get("direccion", [])}
+    _ent = _dir.get("Entrante", 0)
+    _sal = _dir.get("Saliente", 0)
+    _otros = sorted(k for k in _dir if k not in ("Entrante", "Saliente", "Sin dirección"))
+    ctx += (
+        "\nDIRECCIÓN DE LAS LLAMADAS:\n"
+        f"Entrantes: {_ent} ({_pct(_ent):.1f}%)\n"
+        f"Salientes: {_sal} ({_pct(_sal):.1f}%)\n"
+    )
+    if _otros:
+        ctx += "Otras: " + ", ".join(f"{k}: {_dir[k]}" for k in _otros) + "\n"
 
     ctx += "\nRESULTADOS:\n"
     for r in row["resultados"]:
@@ -402,10 +513,10 @@ def get_data_context(where="1=1"):
 
     ctx += f"""
     CALIDAD:
-    Saludo: {row["calidad"]["saludo"]}
-    Beneficios: {row["calidad"]["beneficios"]}
-    WhatsApp: {row["calidad"]["whatsapp"]}
-    Despedida: {row["calidad"]["despedida"]}
+    Saludo: {row["calidad"].get("saludo") or 0}
+    Beneficios: {row["calidad"].get("beneficios") or 0}
+    WhatsApp: {row["calidad"].get("whatsapp") or 0}
+    Despedida: {row["calidad"].get("despedida") or 0}
     """
 
     # Contacto EFECTIVO (Resultado_Llamada): Contactado = se habló con la persona;
@@ -413,14 +524,17 @@ def get_data_context(where="1=1"):
     # 'contactadas' (=calidad efectiva) y del estatus del marcador (contestada).
     # 'Saludo%' = (Sí+Parcial)/contactadas: casi ningún saludo es 'Sí' (completo); casi todos
     # 'Parcial'. Medirlo sobre contactadas (conversación real) es lo justo, no sobre todas.
-    ctx += "\nASESORES (Llamadas | TMO | Contactado | Sin Contacto | %Contactado | Saludo% | Posibles ventas):\n"
+    _col_pv = "" if ocultar_ventas else " | Posibles ventas"
+    ctx += f"\nASESORES (Llamadas | TMO | Contactado | Sin Contacto | %Contactado | Saludo%{_col_pv}):\n"
     for a in row["asesores"]:
         ctx += (
             f"{a['Cuenta']} | Llamadas: {a['llamadas']} | TMO: {_fmt_tmo(a['tmo_seg'])} "
             f"| Contactado: {a['contactado']} | Sin Contacto: {a['sin_contacto']} "
-            f"| %Contactado: {a['contactado_pct']}% | Saludo%: {a['saludo_ok_pct']}% "
-            f"| Posibles ventas: {a['efectivas']}\n"
+            f"| %Contactado: {a['contactado_pct']}% | Saludo%: {a['saludo_ok_pct']}%"
         )
+        if not ocultar_ventas:
+            ctx += f" | Posibles ventas: {a['efectivas']}"
+        ctx += "\n"
 
     if row["rechazos"]:
         ctx += "\nRECHAZOS:\n"
@@ -572,9 +686,9 @@ def get_asesor_context(where, asesor=""):
         query_parameters=[bigquery.ScalarQueryParameter("asesor", "STRING", f"%{asesor}%")]))
     row = dict(list(job.result())[0])
 
-    total = row["resumen"]["total"]
-    contactadas = row["resumen"]["contactadas"]
-    ventas = row["resumen"]["ventas"]
+    total = int(row["resumen"]["total"] or 0)
+    contactadas = int(row["resumen"].get("contactadas") or 0)
+    ventas = int(row["resumen"].get("ventas") or 0)
 
     tasa_contacto = (contactadas / total * 100) if total else 0
     tasa_venta = (ventas / total * 100) if total else 0
@@ -603,10 +717,10 @@ def get_asesor_context(where, asesor=""):
 
     ctx += f"""
     CALIDAD (conteos de detección heurística, NO juicios: no asumas que un conteo alto es bueno ni uno bajo malo salvo que calcules una tasa sobre un denominador):
-    - Saludo detectado: {row["calidad"]["saludo"]}
-    - Beneficios expuestos: {row["calidad"]["beneficios"]}
-    - Ofreció WhatsApp: {row["calidad"]["whatsapp"]}
-    - Despedida detectada: {row["calidad"]["despedida"]}
+    - Saludo detectado: {row["calidad"].get("saludo") or 0}
+    - Beneficios expuestos: {row["calidad"].get("beneficios") or 0}
+    - Ofreció WhatsApp: {row["calidad"].get("whatsapp") or 0}
+    - Despedida detectada: {row["calidad"].get("despedida") or 0}
     """
 
     if row["rechazos"]:

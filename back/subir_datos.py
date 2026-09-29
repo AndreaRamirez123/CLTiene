@@ -110,8 +110,8 @@ def parse_fecha_es(s):
         return None
 
 
-# Columnas de la tabla origen (todas menos Fecha y tipo, que difieren entre el query
-# principal y el fallback). Se comparten para no duplicar la lista.
+# Columnas de la tabla origen (menos `Fecha`, cuya variante ISO/es-CO se resuelve
+# en el query principal y en el fallback). Se comparten para no duplicar la lista.
 _COLS_MEDIO = """
             b.[Contacto (Identificacion - Nombre],
             b.[Telefono], b.[Agente], COALESCE(b.[Cuenta], b.[Agente]) AS Cuenta,
@@ -138,24 +138,19 @@ _COLS_MEDIO = """
 def cargar_desde_sql():
     engine = _crear_engine()
 
-    # Query principal: filas con fecha en formato ISO 120 (la mayoría). Inalterado.
+    # Query principal: filas con fecha en formato ISO 120 (la mayoría).
+    # `tipo` se toma tal cual del origen. Antes un CTE contaba filas por
+    # (cuenta, timestamp) y marcaba 'mixto' cuando había más de una (~21% de las
+    # llamadas), lo que escondía esas filas de los filtros por tipo. El tipo del
+    # origen ya es el dato bueno; el JOIN además solo servía para ese conteo
+    # (devuelve exactamente las mismas filas que el WHERE).
     sql = text(f"""
-        WITH registros_unicos AS (
-            SELECT COALESCE(cuenta, Agente) cuenta,
-                   TRY_CONVERT(datetime, fecha, 120) AS fecha,
-                   COUNT(*) AS cant
-            FROM CUN_REPOSITORIO.coe.CLTIENE_LLAMADAS
-            WHERE TRY_CONVERT(datetime, fecha, 120) IS NOT NULL
-            GROUP BY COALESCE(cuenta, Agente), TRY_CONVERT(datetime, fecha, 120)
-        )
         SELECT
             TRY_CONVERT(datetime, b.Fecha, 120)          AS Fecha,
             {_COLS_MEDIO},
-            CASE WHEN a.cant > 1 THEN 'mixto' ELSE b.tipo END AS tipo
+            b.[tipo] AS tipo
         FROM CUN_REPOSITORIO.coe.CLTIENE_LLAMADAS b
-        INNER JOIN registros_unicos a
-            ON a.cuenta = COALESCE(b.cuenta, b.Agente)
-           AND a.fecha  = TRY_CONVERT(datetime, b.fecha, 120)
+        WHERE TRY_CONVERT(datetime, b.Fecha, 120) IS NOT NULL
     """)
 
     # Fallback: filas cuya fecha NO parsea con 120 (formato español de Windows, lote
@@ -1052,6 +1047,10 @@ def contar_objeciones(texto):
 
 def procesar(df):
     df['Tipo_Llamada'] = df['Tipo_Llamada'].str.strip().replace({'Salientes': 'Saliente', 'Entrantes': 'Entrante'})
+    # El origen trae las dos cosas con variantes: 'Salientes'/'Entrantes' (dirección) y
+    # 'venta'/'servicios' (tipo). Sin esto el dropdown 'Tipo de Llamada' y la gráfica
+    # 'Ventas vs Servicio' offered 4 opciones en vez de 2.
+    df['tipo'] = df['tipo'].str.strip().str.lower().replace({'venta': 'ventas', 'servicios': 'servicio'})
 
     if REPROCESO_COMPLETO:
         log("  ⚠️ RE-PROCESO COMPLETO: ignorando cache; se re-procesan TODAS con el prompt actual (v15)")

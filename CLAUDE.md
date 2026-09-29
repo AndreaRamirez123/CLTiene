@@ -743,17 +743,55 @@ Al revisar el ChatVisor pueden aparecer dos problemas distintos con causas y sol
 - Leídas **58.179** (51.037 ISO + 7.142 fallback español) → dedup **8.183 (14.1%)** → escritas **49.996**. La tabla **NO cambió**: el SQL CUN no pasa del **2026-09-09**.
 - Verificado: 27 asesores, 0 `Cuenta NULL`, historia 2025-10-10 → 2026-09-09, `Fecha`/`fecha_carga` = INTEGER ns (contrato con `DIV(Fecha,1000)` intacto). 959 filas sin `Transcripcion_V4` = fragmentos STT de 1–9 chars (esperado, no bug).
 
-### 3. 🔴 Hallazgo: `mixto` es un bug de mapeo, no "llamadas mezcladas"
-- `back/subir_datos.py:154` → `CASE WHEN a.cant > 1 THEN 'mixto' ELSE b.tipo END`; el CTE `registros_unicos` cuenta filas por `COALESCE(cuenta, Agente)` + **timestamp** (no "día"). Marca **10.783 filas (21,6%)** que quedan **invisibles** en los filtros `tipo=ventas` / `tipo=servicio`.
-- El mismo `CASE` está duplicado en `back/api/upload/procesador.py:85-88` (legacy, latente). El fallback `sql_fb` (línea 168) ya usa `b.[tipo] AS tipo`.
-- **Cruce medido (49.996):** ventas 978 entrantes / 11.476 salientes / 11.884 NULL; servicio 289 / 5.348 / 9.234; mixto 4.486 / 2.386 / 3.911; `servicios` (typo) 4. `Tipo_Llamada` NULL = **25.029 (50%)**.
-- **Fix acordado:** `b.[tipo] AS tipo` (eliminar CTE + JOIN) + replicar en `procesador.py` + normalizar `servicios` → `servicio`; recargar incremental (backup listo) y verificar `mixto = 0` sin cambiar total ni `Tipo_Llamada`.
+### 3. Hallazgo `mixto` (bug de mapeo) → ✅ **RESUELTO el 2026-09-28** (ver Sesión 2026-09-28)
+- **Qué era `mixto` (NO "llamadas mezcladas"):** el CTE `registros_unicos` del query principal contaba filas por `COALESCE(cuenta,Agente)` + **timestamp** y hacía `CASE WHEN a.cant > 1 THEN 'mixto' ELSE b.tipo END`. El tipo del origen siempre estuvo bien; el `INNER JOIN` solo servía para ese conteo. Impacto: **10.783 filas (21,6%)** invisibles en los filtros por tipo + una 3ª barra fantasma en la gráfica "Ventas vs Servicio". El mismo `CASE` estaba duplicado en `back/api/upload/procesador.py` (legacy).
 
 ### 4. Roadmap acordado — 2 informes PDF segmentados (Ventas / Servicio), sin correo
 - **2 archivos**: `reporte_ventas_<periodo>.pdf` y `reporte_servicio_<periodo>.pdf`, cada uno con apartados **Entrantes** + **Salientes** + **"Sin dirección"** (obligatorio: 50% de `Tipo_Llamada` NULL). Periodo: última semana completa **2026-08-31 → 2026-09-06**.
 - Requisitos (de auditoría de solo lectura): `generar_reporte_completo(FilterModel)` ya acepta `tipo_llamada` / `seguimiento_llamada` (reutilizable con overrides) pero `enviar_reporte_semanal.py` solo acepta fechas → hace falta **script/flags nuevos**; `get_data_context()` **no trae** el desglose por `Tipo_Llamada` (agregarlo); `contexto_tipo_llamada()` adapta el prompt a Servicio pero **no excluye** "Posibles ventas" (ni el desglose por asesor ni el semáforo) → quitarla en modo servicio.
 - Salida **local**: sin SMTP, sin registro en `cltiene_reportes_enviados`, sin tocar el job/scheduler.
 - **Venta real sigue bloqueada upstream:** Cristian Galeano (21-sep) confirmó que la llamada **no está enlazada** a un caso en Zoho.
+
+### ✅ Los 3 informes HECHOS (2026-09-28) — general (correo) + ventas + servicio
+
+> **Son 3 informes, no 2:** el **general** (el mismo que se envía al correo a Steven) + los 2 **segmentados por
+> frente** (ventas / servicio), cada uno con los apartados Entrantes / Salientes / Sin dirección.
+> Semana **2026-09-14 → 2026-09-20** (998 llamadas). **Sin envío, sin registro, sin tocar job/scheduler.**
+
+| Informe | Págs | Cómo se generó |
+|---|---|---|
+| `reporte_general_<periodo>.pdf` | 4 | `enviar_reporte_semanal.py --dry-run --no-preflight --fecha-desde/--fecha-hasta` (**idéntico al que se enviaría por correo**) |
+| `reporte_ventas_<periodo>.pdf` | 6 | `generar_reportes_segmentados.py` (2 bloques) |
+| `reporte_servicio_<periodo>.pdf` | 6 | ídem |
+
+- **Entregables** en `back/reportes_segmentados/`. Los 2 segmentados llevan además `.html` sidecar (auditoría); el general solo PDF (el dry-run no lo guarda y **no se tocó el script del job**, que corre en Cloud Run).
+- **Bloques (2 por informe):** Ventas → Entrantes **14** (2,4%) · Salientes **576** (97,6%). Servicio → Entrantes **175** (42,9%) · Salientes **233** (57,1%). Cada bloque abre **página nueva** (`.bloque{break-before:page}`) con portadilla `Ventas — Salientes · N llamadas (X% del frente)`.
+- 🚫 **El bucket "Sin dirección" (`Tipo_Llamada IS NULL`) se EXCLUYÓ de los 3 informes** (decisión del usuario 2026-09-28: el corte que importa es **Ventas vs Servicio**, no la dirección). Cada informe quedó con **2 bloques**. Se quitó también la `NOTA DE COBERTURA` del contexto (`helpers/utils.py`), que ya no declara ese faltante.
+  - ⚠️ **Consecuencia a tener presente:** el campo viene vacío en el origen para ~49% del histórico (nov-2025→ene-2026 y feb-2026). Para esas fechas, Entrantes+Salientes **no** suma el total. Desde mar-2026 el origen trae la dirección siempre, así que los informes semanales (que siempre son la última semana) no tienen ese problema. Verificado: hoy las 3 salidas traen 0 menciones de "Sin dirección".
+  - El centinela `seguimiento_llamada='null'` → `Tipo_Llamada IS NULL` **se conserva** en `filters()` (mecanismo genérico, con sus tests), aunque los informes ya no lo usen.
+- **Modo Servicio (verificado: 0 menciones de ventas en PDF y HTML):** `es_informe_de_servicio()` → `get_data_context(ocultar_ventas=True)` quita la métrica, la columna de asesor, la fila del Tablero, el semáforo/rango y las metas SMART ⇒ **Tablero de 7 filas**. En Ventas y en el general se conserva todo (8 filas).
+- **Cambios en el código:** (1) `helpers/utils.py`: `_SIN_DIRECCION` (sentinelas `null`/`sin_direccion`/…) → `Tipo_Llamada IS NULL`; nuevo bloque **DIRECCIÓN DE LAS LLAMADAS** con Entrantes/Salientes/Sin + *NOTA DE COBERTURA*; `get_asesor_context` también se endureció contra 0 filas; (2) `generar_reporte_completo.py` acepta `ocultar_ventas`; (3) `reporte_pdf.html_a_pdf(titulo=, subtitulo=)` + CSS `.bloque`; (4) script nuevo con flags `--fecha-desde/--fecha-hasta --tipos --direcciones --solo-html --solo-pdf --forzar --outdir`; (5) validador `tests/validar_reportes_segmentados.py` (cubre los 3).
+- **🔴 3 bugs encontrados y corregidos durante la corrida (todos con regresión):**
+  1. **`get_data_context` reventaba con 0 filas** (`SUM` sobre conjunto vacío = NULL → `TypeError: unsupported format string passed to NoneType` y `None%`/`None` en el texto). Pasó al combinar `ventas` + `Sin dirección` (combinación vacía). Fix **doble**: `COALESCE` en los agregados del SQL + `or 0` y `_pct()` (división segura) en Python, en `get_data_context` **y** `get_asesor_context`. Un test lo cazó (el mock sin COALESCE); con datos reales de BigQuery el `COALESCE` ya lo tapaba, pero el bug quedaba latente para el `--forzar` y para cualquier filtro vacío.
+  2. **El bloque vacío no abría página** (el `<div>` sin `class="bloque"` pegaba la nota al bloque anterior) → los 3 apartados no se leían como secciones. Fix + regresión.
+  3. **El validador daba un falso negativo** (buscaba el em-dash literal, que el PDF extrae como guion corto) y **no medía los residuos del PDF del general** (no tiene HTML). Ambos corregidos; los residuos ahora se miden siempre en el PDF.
+- **Verificado:** 60 tests OK (`python -m unittest discover -s tests`); contexto de producción **byte-idéntico al baseline** fuera del bloque DIRECCIÓN (comparado contra los contextos guardados del reporte semanal); ningún PDF con `None`/`nan`/`N/A`; semáforos 🟢🟡🔴 convertidos a **Verde/Amarillo/Rojo** en el texto; `rgb(15,23,42)` (fondo oscuro de la IA) eliminado en el PDF; `cltiene_reportes_enviados` sigue con **0 filas** (el general NO se registró ni se envió).
+- **🔴 Verificación de la BD y del origen (2026-09-28, mismo día):** el SQL Server tiene **59.177 filas** con tope **2026-09-20 14:00:11**, idéntico al `MAX(Fecha)` de BigQuery → **0 filas nuevas ⇒ la BD ya estaba al día y NO se recargó** (recargar habría sido un no-op con `WRITE_TRUNCATE` de 50.994 filas). `Tipo_Llamada` en el origen trae **4 valores literales** (`Saliente` 11.575 / `Salientes` 11.776 / `Entrante` 4.388 / `Entrantes` 1.940) + **29.498 NULL**; BigQuery ya los tiene limpios (solo `Saliente`/`Entrante`) porque la normalización vive en `subir_datos.py` L1049 (`WRITE_TRUNCATE`, nunca un `UPDATE` — no existe ningún `UPDATE`/`DELETE`/`MERGE` en el repo). El **fix de nomenclatura `Salientes`→`Saliente` que Juan Manuel se Traders asesoría de julio/2026 NO está aplicado** (13.716 filas) — pendiente reclamárselo junto con llenar la dirección del histórico.
+- **Comandos:**
+  ```bash
+  cd back/
+  $env:PYTHONIOENCODING='utf-8'; $env:PATH=$env:PATH+';C:\Program Files\GTK3-Runtime Win64\bin'
+  # 1) el general (idéntico al del correo; --no-preflight = cero escrituras en BQ)
+  python .\enviar_reporte_semanal.py --dry-run --no-preflight --fecha-desde 2026-09-14 --fecha-hasta 2026-09-20 --outdir .\reportes_segmentados
+  # 2) los 2 segmentados (4 llamadas gpt-4o)
+  python .\generar_reportes_segmentados.py --outdir .\reportes_segmentados
+  python .\generar_reportes_segmentados.py --solo-pdf --outdir .\reportes_segmentados  # re-rasteriza sin gastar tokens
+  python .\tests\validar_reportes_segmentados.py .\reportes_segmentados          # valida los 3 PDF
+  ```
+- **⚠️ WeasyPrint local** requiere GTK3 Runtime en el `$env:PATH`; `pypdf` (solo para validar) se instaló en el venv. **Errores SSL intermitentes a BigQuery desde la red CUN ≈ 1 de cada 2 intentos ⇒ reintentar** (pasó 5 veces hoy). El dry-run escribe `reporte_semanal_dryrun.pdf` → renombrar a `reporte_general_<periodo>.pdf`.
+- **Nota de calidad:** el bloque "Ventas · Entrantes" tiene solo **14 llamadas** → sus metas SMART son estadísticamente débiles (la nota del PDF ya advierte interpretarlas junto al volumen). El histórico (49% sin dirección) sí producirá bloques "Sin dirección" con datos cuando se corra sobre un período más antiguo.
+
+
 
 ### Carga de datos 2026-09-16 (hecha, con gpt-4o + 2 keys) — ⚠️ incluye fix preventivo de tipo `Fecha`
 - Corrida **incremental** con `gpt-4o` + 2 keys, Diego en la red CUN. Juan Manuel cargó datos nuevos al SQL (hasta 6-sep).
@@ -796,6 +834,87 @@ Al revisar el ChatVisor pueden aparecer dos problemas distintos con causas y sol
 - Subido incremental con `gpt-4o-mini` + solo key 2 (`OPENAI_API_MUNDIAL=""`), driver ODBC 18. BigQuery: 38.148 → **37.286 filas** (deduplicado, datos al **2-jul**). Costo ~$3. Backup: `cltiene_llamadas_procesadas_backup_20260709`.
 - Verificado: 0 duplicados, 0 transcripciones sin V4, 0 nulos en campos clave, datos de julio presentes (395 filas).
 - **Fix del driver SQL** (`_crear_engine()` robusto: Driver 18/17/viejo) aplicado a `subir_datos.py`.
+
+## Sesión 2026-09-28 — bug `mixto` resuelto + recarga al 20-sep (50.994 filas)
+
+> Estado de la BD: **50.994 filas · 2025-10-10 → 2026-09-20 · 27 asesores · 0 `Cuenta NULL` · 0 `tipo` NULL**.
+> Decisiones del usuario: **normalizar sí · recargar ya · SIN backup nuevo** (el `_backup_20260925` = estado exacto previo) · **sin deploy** (solo cambian los datos).
+
+### 1. El bug `mixto` (qué era, por qué, y el fix)
+- **Causa raíz:** en el query principal de `cargar_desde_sql()`, un CTE (`registros_unicos`) agrupaba por `COALESCE(cuenta, Agente)` + **timestamp** y el `INNER JOIN` marcaba `CASE WHEN a.cant > 1 THEN 'mixto' ELSE b.tipo END`. El tipo del origen **siempre estuvo bien**; el JOIN no aportaba datos, solo el conteo. El mismo `CASE` estaba duplicado en `back/api/upload/procesador.py` (legacy, con LEFT JOIN → `tipo` NULL en 50% de las filas).
+- **Impacto real:** **10.783 filas (21,6%)** quedaban **invisibles** en los filtros `tipo=ventas` / `tipo=servicio` y aparecían como barra fantasma en "Ventas vs Servicio"; el dropdown ofrecía 4 categorías (`ventas`, `mixto`, `servicio`, `servicios`) en vez de 2.
+- **Fix (2 archivos):**
+  - `back/subir_datos.py` → `b.[tipo] AS tipo` (eliminan el CTE y el `INNER JOIN`; se verificó con queries que el JOIN devolvía **exactamente** las mismas 52.035 filas que el `WHERE` ⇒ cero cambio en el conjunto de filas).
+  - Una línea de normalización en `procesar()` junto a la de `Tipo_Llamada`: `df['tipo'] = df['tipo'].str.strip().str.lower().replace({'venta':'ventas','servicios':'servicio'})` (el origen trae `venta` y `servicios` como variantes).
+  - Replicado en `back/api/upload/procesador.py` (`conectar_y_cargar` + `procesar_dataframe`) para que el legacy no lo reintroduzca.
+  - `tipo` no lo lee ningún otro paso del pipeline (verificado con grep) → sin efectos colaterales.
+- **Nota de por qué NO era un bug de "llamadas mezcladas":** el nombre `mixto` sugería "llamadas mezcladas"; en realidad solo marcaba "hay más de una llamada del mismo asesor en el mismo minuto".
+
+### 2. Recarga (`subir_datos.py`, 09:03→09:07, gpt-4o + 2 keys, red CUN)
+- **Pre-flight en seco (antes de escribir):** `cargar_desde_sql()` → 59.177 leídas (52.035 ISO + 7.142 español), dedup 8.183 (13.8%) → **50.994** y `tipo` normalizado = 2 valores. Con eso se confirmó el fix ANTES del `WRITE_TRUNCATE`.
+- **Origen:** SQL crudo **59.177** (998 filas nuevas post-09-sep, del 14 al **20-sep 14:00**: 590 ventas / 408 servicio).
+- **BigQuery:** 49.996 → **50.994** (+998). Historia 2025-10-10 → **2026-09-20**.
+- **37 tests OK** (`python -m unittest discover -s tests`; hubo que `pip install fastapi` en el venv local, faltaba para `test_reporte_semanal`).
+- Entorno: Python 3.14.5, **pandas 3.0.5** (el fix INTEGER-ns de `subir_bigquery()` aplica y se verificó), pyodbc 5.3.0 / ODBC Driver 18.
+
+### 3. Verificación post-carga (BigQuery)
+- `tipo` = **2 valores exactos**: ventas **28.911** / servicio **22.083** (= 50.994). `mixto = 0`, `servicios = 0`, `tipo NULL = 0`.
+- **Schema idéntico al backup** (57 columnas, `Fecha`/`fecha_carga` = **INTEGER ns**) ⇒ el contrato `DIV(Fecha,1000)` del backend intacto.
+- `Cuenta NULL = 0` · 27 asesores · `Tipo_Llamada` **sin cambios**: Entrante 5.946 / Saliente 20.019 / NULL **25.029 (49%)** ⇒ los 998 nuevos traeían todos dirección.
+- Sin regresión de `Transcripcion_V4`: filas con texto pero sin V4 959 → 1.034 (fragmentos STT cortos, esperado).
+- **KPIs de referencia:** contacto efectivo **27,9%** (14.236 Contactado / 36.758 Sin Contacto = 100% del total) · saludo completo `Sí` **425** (Sí+Parcial 8.122) · posibles ventas (regex) **886** · marcador (46.191 con dato): ANSWERED 35.172 / NO ANSWER 11.017 / BUSY 1.
+
+### 4. Consecuencias
+- Los **2 informes PDF segmentados** ya pueden confiar en el override `tipo_llamada` (antes `mixto` contaminaba el filtro). La última semana completa disponible es **2026-09-14 → 2026-09-20** ⇒ el **preflight A** del envío semanal se cumpliría (sigue **APAGADO** por decisión del usuario).
+- ⚠️ **Trampa latente NO tocada (fuera de alcance):** la pareja `tipo_llamada`→columna `tipo` (negocio) y `seguimiento_llamada`→columna `Tipo_Llamada` (dirección) está **invertida**. Renombrarla exige deploy de backend + frontend.
+- **Pendiente de commit:** `back/subir_datos.py`, `back/api/upload/procesador.py`, `CLAUDE.md`, `opencode.md` y este informe (no commiteado — sin aprobación).
+
+## Sesión 2026-09-29 — TMO `N/D` (fix + verificación en el origen) + correo de automatización a los Juanes
+
+> Continuación de la sesión 2026-09-28. Sin cambios en la BD (50.994 filas, tope 20-sep) y sin deploy.
+
+### 1. El TMO `N/D` con semáforo 🔴 era un bug, no un dato malo
+- **Síntoma:** los bloques de **llamadas entrantes** de los 3 informes salían con TMO `N/D` y semáforo **🔴 rojo**, que sugería mal desempeño. No lo era: significaba "cero duración".
+- **Causa:** `AVG(dur_seg)` sobre un conjunto 100% `NULL` devuelve `NULL`; el semáforo coercionaba `None → 0` → 🔴. Y el TMO **general** se calculaba sobre las 809 salientes pero se presentaba como si fuera de las 998 llamadas (cobertura real **81,1%**).
+- **Fix `back/helpers/utils.py`:**
+  - El CTE `resumen` ahora trae `COALESCE(COUNTIF(dur_seg > 0), 0) AS tmo_n` (conteo de llamadas **con** duración) además del `AVG`.
+  - Se derivan `tmo_sin_dato` y `tmo_cubierto` (`tmo_n / total`) → alimentan el contexto y el semáforo.
+  - **Sin ninguna llamada medible → `⚪`** (no dato) en vez de 🔴. Con cobertura parcial → color por umbral normal, pero el texto declara el porcentaje.
+  - Contexto: en el caso sin dato dice que **no se puede calcular** y que no debe interpretarse como mal desempeño; en el parcial, `1:17 (promediado sobre 809 de 998 llamadas = 81,1% de cobertura; el resto son entrantes sin campo de duración)`. La leyenda de rangos incluye `⚪ sin dato`.
+- **Prompt `back/api/ia/generar_reporte_completo.py`:** prohibido inventar/estimar/juzgar un TMO `N/D`, y obligatorio citar la cobertura cuando sea parcial.
+- `back/reporte_pdf.py` **ya** mapeaba `⚪` → `N/D` con badge gris (y `🟢🟡🔴` → Verde/Amarillo/Rojo, del 28-sep) ⇒ no necesitó cambio en este arreglo.
+- **Tests:** +5 (`TestSemaforoTmoSinDato`) ⇒ suite **60 → 65**, `git diff --check` limpio.
+- **Informes regenerados:** general `1:17` (81,1% cobertura, 🟡) · Ventas Entrantes `N/D` ⚪ / Salientes `1:18` 🟡 · Servicio Entrantes `N/D` ⚪ / Salientes `1:14` 🟡. 4 / 6 / 6 páginas.
+
+### 2. 🔒 Verificación en el ORIGEN (SQL Server de la CUN) — el hueco NO es nuestro
+> BigQuery es nuestra copia: consultarla no probaba nada. Se fue al origen con guardas que rechazan cualquier palabra de escritura en el texto de la consulta. **Cero escrituras, como siempre.**
+
+| Dirección (origen, 14–20 sep) | Llamadas | `Tiempo␣␣de␣Conversacion` | `Tiempo␣␣de␣Llamada` |
+|---|---|---|---|
+| `Salientes` | 809 | 809 | 809 |
+| `Entrantes` | 189 | **0** | **0** |
+
+- En esas 189 filas el valor es **`NULL`**, no cadena vacía ⇒ el **archivo de origen de entradas no trae la columna**. BigQuery lo refleja fiel.
+- **No hay columna alternativa:** `Tiempo  de Llamada` (duración total, ~30 s más que la de conversación) **también** viene vacía en las entrantes.
+- **Total del origen = 998** llamadas, 9 asesores, tope `2026-09-20 14:00:11` ⇒ cuadra exacto con los 3 informes. Cero filas nuevas (la BD ya estaba al día).
+- 🪤 **Trampa para queries nuevas:** la columna se llama **`Tiempo␣␣de␣Conversacion`, con DOBLE espacio**. Con un solo espacio falla con `Invalid column name`. El pipeline la mapea bien (queda como `Tiempo__de_Conversacion` en BigQuery), pero cualquier consulta manual la tropieza.
+- **Dato de contraste:** el lote antiguo de 7.142 filas (oct-2025, sin dirección) **sí trae duración al 100%** ⇒ la columna existe y se llena; falta en el archivo de **entradas**. Convierte esto en un pedido concreto para Cristian/CL Tiene y Juan Manuel.
+- **Consecuencia de negocio:** el TMO de las entrantes **no es medible** hasta que ese campo llegue — y el TMO es un KPI que Steven pidió explícitamente.
+
+### 3. 📧 Correo de AUTOMATIZACIÓN enviado a los Juanes (29-sep-2026)
+- **Para:** `Juan_marin@cun.edu.co` + `Juan_ganicac@cun.edu.co` (ambos en *Para*, sin copia de Fabián). **Sin fecha de reunión aún.**
+- **Encuadre corregido:** el objetivo es automatizar **las DOS etapas de código**, no solo nuestro pipeline.
+  - **Etapa 1 (COE / Juan Manuel):** SFTP + STT + cruce + Ollama. Hoy es un **notebook** ⇒ hay que volverlo script parametrizable (fecha de corte, reintentos, logs). **Es la parte difícil** y así se cheques en el correo.
+  - **Etapa 2 (nosotros):** `subir_datos.py` ya es script autónomo con `__main__` ⇒ `PythonOperator` **sin reescribir nada**.
+- **7 preguntas abiertas:** (a) ¿el nodo de Airflow tiene **GPU/CUDA** (`faster-whisper` la necesita)? (b) ¿**dónde vive Ollama** y es alcanzable desde Airflow? (c) ¿dónde quedan las **credenciales** de SFTP y BD? (d) **salida a `api.openai.com` y BigQuery** — la más crítica tras la auditoría de seguridad, (e) **secrets**, (f) **dependencias/ODBC Driver 18** en la imagen, (g) **gobernanza** (¿el DAG lo agrega el equipo de infraestructura o nos dan acceso?).
+- **Lo que se quitó del borrador** (decisión del usuario): el split en **Frente 1** (código al DAG, con el Excel manual) y **Frente 2** (eliminar el Excel, que depende de S3); también la pregunta del día de corte semanal.
+- **El cierre quedó en tono de escalada** ("reunión urgente", "escalar con quien corresponda", "solución definitiva").
+- ⚠️ **Riesgos a vigilar en la respuesta:** (1) al no conservar el split, "eliminar los Excel" puede leerse como "reemplaza el Excel por la extracción de ContactVox", que **no está en manos de Juan Manuel** (depende de S3; Fabián ya tiene el hilo con Daniel Obando) — la respuesta es que el frente 1 sí lo destraba él; (2) **"los dos casos" es ambiguo** (puede leerse como las dos etapas *o* como los dos problemas de datos) → aclarar en una línea en el primer reply.
+- **Pendiente:** segundo correo con los pedidos de datos sueltos (llave WAP, NO ANSWER/BUSY, `Salientes→Saliente`, hora del filename, y el campo de duración en el Excel de entradas). Se dejó fuera a propósito: el correo del 29-sep fue solo de automatización.
+
+### 4. Estado
+- **Informes:** 3 regenerados con el fix. Las versiones corregidas **NO se han reenviado** (el correo de prueba del 28-sep lleva las previas al fix) — reenviar solo con OK explícito.
+- **Envío semanal: APAGADO**, sin cambios. **SQL Server: cero escrituras.** **Sin deploy.**
 
 ## Asesores con datos "cortados" — SOLO Edwin es un problema real (verificado 2026-07-14)
 

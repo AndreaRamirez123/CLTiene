@@ -2,7 +2,12 @@ from datetime import datetime, timedelta
 
 from IA.Open_AI import call, prompt_html
 from api.models import FilterModel
-from helpers.utils import get_data_context, contexto_tipo_llamada, get_periodo_anterior_context
+from helpers.utils import (
+    es_informe_de_servicio,
+    get_data_context,
+    contexto_tipo_llamada,
+    get_periodo_anterior_context,
+)
 
 
 def _contexto_periodo_anterior(filters: FilterModel) -> str:
@@ -31,6 +36,23 @@ def _contexto_periodo_anterior(filters: FilterModel) -> str:
 
 
 def generar_reporte_completo(filters: FilterModel):
+    # Informe de SERVICIO: el contexto se genera SIN la métrica de ventas y el prompt
+    # pide un Tablero de 7 filas y una tabla de asesores sin la columna de ventas.
+    es_servicio = es_informe_de_servicio(filters)
+    _filas_tablero = (
+        "SIEMPRE estas 7 filas EXACTAS, en este orden, sin omitir ninguna: 1) Total llamadas, "
+        "2) Llamadas de calidad, 3) Contacto efectivo, 4) TMO, 5) Participación cliente, "
+        "6) Saludo, 7) Calidad. En este informe NO existe la fila 'Posibles ventas' (son llamadas "
+        "de servicio, no de venta). "
+        if es_servicio else
+        "SIEMPRE estas 8 filas EXACTAS, en este orden, sin omitir ninguna: 1) Total llamadas, "
+        "2) Llamadas de calidad, 3) Contacto efectivo, 4) TMO, 5) Participación cliente, "
+        "6) Saludo, 7) Calidad, 8) Posibles ventas. "
+    )
+    _col_ventas_asesor = "" if es_servicio else "Posibles ventas | "
+    # En servicio las metas NO pueden apoyarse en posibles ventas (el contexto no la trae).
+    _metas_pv = "" if es_servicio else "posibles ventas % (base 0.29%), "
+
     content, error = call(
         prompt_html(
             contexto_tipo_llamada(filters) +
@@ -74,6 +96,11 @@ def generar_reporte_completo(filters: FilterModel):
             "CONSECUENCIA esperada ('al desarrollar mejor la conversación, el TMO probablemente suba'), "
             "nunca como el número a alcanzar. Si el TMO bajó, dilo como síntoma ('llamadas que mueren "
             "temprano', 'cierres prematuros'), sin proponer moverlo por moverlo.\n"
+            "- Si el TMO viene como 'N/D — NO SE PUEDE CALCULAR' (todas las llamadas del bloque son "
+            "entrantes y el origen no manda el campo de duración): NO inventes un TMO, NO lo estimes, "
+            "NO lo juzgues y NO lo pongas en rojo. Escribe textualmente que no hay dato por medición "
+            "y sigue con los demás indicadores. Si viene con un % de cobertura menor a 100, menciona "
+            "ese porcentaje al citarlo ('el TMO de 1:17 cubre el 81% de las llamadas').\n"
             "- Participación del cliente = % de turnos hablados por el cliente (más alto = el asesor "
             "deja hablar/escucha más; muy bajo = monólogo del asesor).\n"
             "- Estatus de llamadas (Contestada / No Contestada / Ocupada) mide alcance del marcador, "
@@ -122,11 +149,10 @@ def generar_reporte_completo(filters: FilterModel):
             "En el Resumen NO menciones 'Estatus del marcador', 'Contestada', 'Contacto Efectivo' ni sus "
             "números — NADA de eso va en el Resumen, va SOLO en la sección 3.\n"
             "2. Tablero de Indicadores — tabla: Indicador | Valor | Semáforo con 🟢/🟡/🔴. DEBE tener "
-            "SIEMPRE estas 8 filas EXACTAS, en este orden, sin omitir ninguna: 1) Total llamadas, "
-            "2) Llamadas de calidad, 3) Contacto efectivo, 4) TMO, 5) Participación cliente, 6) Saludo, "
-            "7) Calidad, 8) Posibles ventas. Usa los valores de 'VALORES PARA EL TABLERO' del contexto "
+            + _filas_tablero +
+            "Usa los valores de 'VALORES PARA EL TABLERO' del contexto "
             "(Llamadas de calidad y Contacto efectivo son porcentajes distintos; Saludo = el conteo; "
-            "Calidad = el score 'X/100'); NUNCA pongas 'N/A'. Los semáforos de las 8 filas vienen en "
+            "Calidad = el score 'X/100'); NUNCA pongas 'N/A'. Los semáforos de las filas van en "
             "'SEMÁFOROS YA CALCULADOS' — cópialos EXACTO. JUSTO DEBAJO de la tabla agrega una línea "
             "'Rangos del semáforo:' reproduciendo los umbrales de 'RANGOS DEL SEMÁFORO' del contexto "
             "(al menos Llamadas de calidad, Contacto efectivo, TMO, Participación y Posibles ventas), "
@@ -137,11 +163,16 @@ def generar_reporte_completo(filters: FilterModel):
             "persona vs Sin Contacto = buzón/no disponible/no se habló, con número y %), que responde "
             "'de las llamadas, en cuántas se habló con la persona vs no'; y la Nota metodológica sobre "
             "'contestada'. NO uses etiquetas tipo '(a)'/'(b)': redáctalo como frases o mini-listas. "
+            "Si el contexto trae la sección 'DIRECCIÓN DE LAS LLAMADAS' con su NOTA DE COBERTURA, "
+            "incluye esas cifras tal cual (Entrantes / Salientes / Sin dirección) y menciona el faltante "
+            "de cobertura: NUNCA presentes el total como si el 100% tuviera dirección registrada. "
             "Al comentar el Contacto efectivo (o cualquier indicador con semáforo) NUNCA escribas frases "
             "vagas como 'por debajo de lo esperado' sin sustento: cita el rango concreto del semáforo "
             "(ej. 'Contacto efectivo 48.9%, dentro del rango de 40 a 60% = amarillo').\n"
             "4. Productividad por Asesor — tabla ordenada por volumen: Asesor | Llamadas | TMO | "
-            "Contactado | Sin Contacto | Saludo% | Posibles ventas (usa 'Contactado', 'Sin Contacto' y "
+            "Contactado | Sin Contacto | Saludo% | "
+            + _col_ventas_asesor +
+            "(usa 'Contactado', 'Sin Contacto' y "
             "'Saludo%' del contexto por asesor; Contactado/Sin Contacto = contacto EFECTIVO real, y "
             "'Saludo%' = % de contactadas donde saludó, NO el % de calidad). "
             "Señala sobre/infra-carga y outliers de TMO (muy corto = posible mala atención; muy largo = "
@@ -164,7 +195,8 @@ def generar_reporte_completo(filters: FilterModel):
             "entre sí). PROHIBIDO mezclar dos métricas en una misma meta (ej. 'beneficios y cierre "
             "efectivo en un 20%' mezcla conteo de beneficios + otra métrica sin línea base → mal). Usa "
             "métricas que tengan línea base clara en el contexto: llamadas de calidad % (base 3.9%), "
-            "posibles ventas % (base 0.29%), score de calidad /100 (base 25.6), o el conteo de saludos. "
+            + _metas_pv +
+            "score de calidad /100 (base 25.6), o el conteo de saludos. "
             "Las metas van sobre RESULTADOS; NUNCA pongas el TMO como meta numérica (ver la regla del "
             "TMO). NO inventes líneas base que no estén en el contexto.\n\n"
 
@@ -176,7 +208,7 @@ def generar_reporte_completo(filters: FilterModel):
             "una sola categoría, escríbelo ahí con su número."
         ),
         f"Genera el reporte gerencial con estos datos del periodo filtrado:\n"
-        f"{get_data_context(filters.get_query())}"
+        f"{get_data_context(filters.get_query(), ocultar_ventas=es_servicio)}"
         f"{_contexto_periodo_anterior(filters)}"
     )
     return {"result": content, "error": error}

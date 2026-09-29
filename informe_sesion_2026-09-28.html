@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Informe de Sesión — CLTiene Dashboard · 28 Sep 2026</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: 'Inter', sans-serif; font-size: 11px; color: #1e293b; background: #fff; line-height: 1.6; }
+
+  .cover {
+    width: 100%; min-height: 100vh;
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center; padding: 60px 40px; page-break-after: always;
+    position: relative; overflow: hidden;
+  }
+  .cover::before {
+    content: ''; position: absolute; top: -100px; left: -100px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(252,50,118,0.15) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .cover::after {
+    content: ''; position: absolute; bottom: -80px; right: -80px;
+    width: 350px; height: 350px;
+    background: radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .cover-badge {
+    background: rgba(252,50,118,0.15); border: 1px solid rgba(252,50,118,0.4);
+    color: #FC3276; font-size: 10px; font-weight: 600; letter-spacing: 2px;
+    text-transform: uppercase; padding: 6px 18px; border-radius: 20px;
+    margin-bottom: 32px; z-index: 1;
+  }
+  .cover-logo-text { font-size: 52px; font-weight: 800; color: white; letter-spacing: -1px; z-index: 1; margin-bottom: 8px; }
+  .cover-logo-img { width: 300px; max-width: 68%; height: auto; margin-bottom: 12px; z-index: 1; position: relative; }
+  .cover-logo-text span { color: #FC3276; }
+  .cover-subtitle { font-size: 16px; color: #94a3b8; font-weight: 400; margin-bottom: 48px; z-index: 1; }
+  .cover-divider { width: 60px; height: 3px; background: linear-gradient(90deg, #FC3276, #818cf8); border-radius: 2px; margin: 0 auto 48px; z-index: 1; }
+  .cover-title { font-size: 28px; font-weight: 700; color: white; line-height: 1.3; max-width: 680px; margin-bottom: 16px; z-index: 1; }
+  .cover-description { font-size: 13px; color: #94a3b8; max-width: 560px; margin-bottom: 60px; line-height: 1.7; z-index: 1; }
+  .cover-meta { display: flex; gap: 32px; z-index: 1; flex-wrap: wrap; justify-content: center; }
+  .cover-meta-item { text-align: center; }
+  .cover-meta-label { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
+  .cover-meta-value { font-size: 13px; color: #cbd5e1; font-weight: 500; }
+
+  .page { max-width: 780px; margin: 0 auto; padding: 48px 56px; }
+
+  .section { margin-bottom: 40px; page-break-inside: avoid; }
+  .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #f1f5f9; }
+  .section-number {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, #FC3276, #db2777);
+    color: white; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0;
+  }
+  .section-title { font-size: 16px; font-weight: 700; color: #0f172a; }
+
+  .subsection { margin-bottom: 20px; }
+  .subsection-title { font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin-bottom: 8px; }
+  thead tr { background: #0f172a; }
+  thead th { color: white; font-weight: 600; padding: 9px 12px; text-align: left; font-size: 10px; letter-spacing: 0.3px; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
+  tbody tr:nth-child(odd) { background: #fff; }
+  tbody td { padding: 8px 12px; color: #334155; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+
+  .cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .cards-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+  .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
+  .card-label { font-size: 9px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .card-value { font-size: 18px; font-weight: 800; color: #0f172a; }
+  .card-sub { font-size: 9.5px; color: #64748b; margin-top: 4px; }
+
+  .fix-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .fix-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0; }
+  .fix-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+  .fix-text { font-size: 11px; color: #334155; line-height: 1.5; }
+  .fix-text strong { color: #0f172a; font-weight: 600; }
+  .fix-text code { font-family: 'Courier New', monospace; font-size: 10px; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; color: #be123c; }
+  .fix-item.ok { background: #f0fdf4; border-color: #bbf7d0; }
+  .fix-item.fix { background: #fff7ed; border-color: #fed7aa; }
+  .fix-item.feature { background: #fdf4ff; border-color: #e9d5ff; }
+  .fix-item.data { background: #eff6ff; border-color: #bfdbfe; }
+
+  .before-after { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+  .badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+  .badge-red { background: #fee2e2; color: #dc2626; }
+  .badge-green { background: #dcfce7; color: #16a34a; }
+  .badge-arrow { color: #94a3b8; font-size: 12px; }
+
+  .code-block { background: #0f172a; border-radius: 8px; padding: 14px 16px; margin: 8px 0; overflow-x: auto; }
+  .code-block code { font-family: 'Courier New', monospace; font-size: 10px; color: #cbd5e1; white-space: pre; }
+
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 12px; }
+  .chip-done { background: #dcfce7; color: #15803d; }
+  .chip-pending { background: #fff7ed; color: #c2410c; }
+  .chip-fix { background: #eff6ff; color: #1d4ed8; }
+
+  .callout { border-left: 4px solid #FC3276; background: linear-gradient(90deg, #fff5f9 0%, transparent 90%); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 12px 0; font-size: 11px; color: #475569; line-height: 1.6; }
+  .callout strong { color: #0f172a; }
+  .callout code { font-family: 'Courier New', monospace; font-size: 10px; background: #fce7f0; padding: 1px 4px; border-radius: 3px; color: #be123c; }
+
+  .footer { border-top: 1px solid #f1f5f9; margin-top: 60px; padding-top: 20px; display: flex; justify-content: space-between; align-items: center; color: #94a3b8; font-size: 9.5px; }
+
+  @media print {
+    html, body { background: #fff; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    .cover { min-height: 100vh; }
+    .page { padding: 32px 40px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PORTADA -->
+<div class="cover">
+  <div class="cover-badge">Informe de Sesión de Desarrollo</div>
+  <img class="cover-logo-img" src="data:image/png;base64,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" alt="CLTiene" />
+  <div class="cover-subtitle">Dashboard Analytics · DivergencyAI SAS</div>
+  <div class="cover-divider"></div>
+  <div class="cover-title">Cierre del bug de tipo de llamada y<br>recarga de la base de datos al 20 de septiembre</div>
+  <div class="cover-description">
+    Corrección de un error de clasificación que ocultaba el 21,6% de las llamadas en los filtros de
+    ventas y servicio, normalización de las categorías y recarga verificada de la base de datos
+    con 50.994 llamadas procesadas.
+  </div>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <div class="cover-meta-label">Periodo</div>
+      <div class="cover-meta-value">25 – 28 Sep 2026</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="cover-meta-label">Llamadas</div>
+      <div class="cover-meta-value">50.994</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="cover-meta-label">Historia</div>
+      <div class="cover-meta-value">10-oct-2025 → 20-sep-2026</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="cover-meta-label">Tipo de llamada</div>
+      <div class="cover-meta-value">Ventas / Servicio</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="cover-meta-label">Envío semanal</div>
+      <div class="cover-meta-value">En pausa</div>
+    </div>
+  </div>
+</div>
+
+<!-- CONTENIDO -->
+<div class="page">
+
+  <!-- 1. Resumen ejecutivo -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-number">1</div>
+      <div class="section-title">Resumen Ejecutivo</div>
+    </div>
+    <div class="cards-grid">
+      <div class="card">
+        <div class="card-label">Llamadas procesadas</div>
+        <div class="card-value">50.994</div>
+        <div class="card-sub">Datos frescos hasta el 20-sep-2026</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Filtro de tipo</div>
+        <div class="card-value">100% visible</div>
+        <div class="card-sub">Antes 78,4% (21,6% clasificado como «mixto»)</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Categorías de tipo</div>
+        <div class="card-value">2</div>
+        <div class="card-sub">Antes 4: ventas, servicio, mixto, servicios</div>
+      </div>
+    </div>
+    <p style="font-size:11px; color:#475569; line-height:1.7;">
+      En esta sesión se cerró el pendiente técnico detectado el 25 de septiembre: el pipeline de
+      <strong>subida de datos</strong> clasificaba como <strong>«mixto»</strong> al 21,6% de las llamadas
+      (10.783 de 49.996). Ese error no provenía de la fuente, sino de una cuenta interna del query
+      (un <code>JOIN</code> que solo servía para contar llamadas repetidas del mismo asesor en el mismo
+      minuto). Como consecuencia, esas llamadas <strong>desaparecían de los filtros de ventas y
+      servicio</strong> del dashboard y aparecían como una barra fantasma en la gráfica
+      «Ventas vs Servicio».
+    </p>
+    <p style="font-size:11px; color:#475569; line-height:1.7; margin-top:10px;">
+      El fix toma el tipo directamente del origen y normaliza sus dos variantes
+      (<code>venta</code> y <code>servicios</code>). Después se recargó la base de datos con
+      <strong>998 llamadas nuevas</strong> que el CUN había cargado al servidor, quedando en
+      <strong>50.994</strong> registros con datos hasta el <strong>20 de septiembre</strong>. La recarga se
+      verificó con ocho controles, entre ellos la comparación del esquema técnico de la tabla contra
+      el respaldo previo y las <strong>37 pruebas</strong> automatizadas del backend.
+    </p>
+  </div>
+
+  <!-- 2. El bug -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-number">2</div>
+      <div class="section-title">El error de clasificación («mixto»)</div>
+    </div>
+    <p style="font-size:11px; color:#475569; line-height:1.7; margin-bottom:12px;">
+      El query principal del pipeline traía un CTE (<code>registros_unicos</code>) que agrupaba las
+      llamadas por asesor y marca de tiempo, y un <code>JOIN</code> que solo servía para obtener ese
+      conteo. A partir de él se armaba la columna de tipo de llamada:
+    </p>
+    <div class="code-block"><code>CASE WHEN a.cant &gt; 1 THEN 'mixto' ELSE b.tipo END AS tipo</code></div>
+    <p style="font-size:11px; color:#475569; line-height:1.7;">
+      Es decir: si un asesor tenía <strong>dos o más llamadas en el mismo minuto</strong>, la llamada se
+      marcaba como «mixto» en lugar de conservar su tipo real. El nombre sugería «llamadas mezcladas»,
+      pero el tipo de la fuente siempre estuvo correcto.
+    </p>
+    <div class="callout">
+      <strong>Por qué importaba.</strong> 10.783 filas (21,6%) quedaban invisibles en los filtros
+      <code>tipo = ventas</code> y <code>tipo = servicio</code>. Cualquier análisis segmentado por tipo
+      —incluidos los dos informes PDF que se preparan para CL Tiene— partía de una base incompleta.
+      Verificado además que el <code>JOIN</code> devolvía <strong>exactamente</strong> las mismas
+      52.035 filas que su condición de filtro: eliminarlo no cambia ni una fila del conjunto de datos.
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Entrante</th>
+          <th>Saliente</th>
+          <th>Sin dirección</th>
+          <th>Total (antes)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>ventas</td><td>978</td><td>11.476</td><td>11.884</td><td>24.338</td></tr>
+        <tr><td>servicio</td><td>289</td><td>5.348</td><td>9.234</td><td>14.871</td></tr>
+        <tr><td><strong>mixto</strong> (error)</td><td>4.486</td><td>2.386</td><td>3.911</td><td><strong>10.783</strong></td></tr>
+        <tr><td><em>servicios</em> (variante)</td><td>—</td><td>—</td><td>—</td><td>4</td></tr>
+        <tr><td><strong>Total</strong></td><td>5.757</td><td>19.210</td><td>25.029</td><td><strong>49.996</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 3. El fix -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-number">3</div>
+      <div class="section-title">Corrección aplicada</div>
+    </div>
+    <ul class="fix-list">
+      <li class="fix-item fix">
+        <div class="fix-icon">🛠️</div>
+        <div class="fix-text">
+          <strong>Tipo tomado del origen.</strong> En <code>back/subir_datos.py</code> el query principal
+          quedó en <code>b.[tipo] AS tipo</code>: se eliminaron el CTE y el <code>JOIN</code> que solo
+          contaban llamadas. El conjunto de filas es idéntico (52.035 en ambos casos verificados).
+        </div>
+      </li>
+      <li class="fix-item fix">
+        <div class="fix-icon">🏷️</div>
+        <div class="fix-text">
+          <strong>Normalización de las variantes del origen.</strong> La fuente trae
+          <code>ventas</code>, <code>servicio</code>, <code>servicios</code> y <code>venta</code>. Se agregó
+          una línea junto a la normalización de la dirección de llamada:
+          <code>str.strip().str.lower().replace({'venta':'ventas','servicios':'servicio'})</code>
+          (605 filas de las variantes quedaron en su categoría correcta).
+        </div>
+      </li>
+      <li class="fix-item fix">
+        <div class="fix-icon">♻️</div>
+        <div class="fix-text">
+          <strong>Código heredado corregido.</strong> El mismo error estaba duplicado en
+          <code>back/api/upload/procesador.py</code> (endpoint antiguo, ya no usado). Se le aplicó el
+          mismo cambio para que no pueda reintroducir el problema.
+        </div>
+      </li>
+      <li class="fix-item ok">
+        <div class="fix-icon">🧪</div>
+        <div class="fix-text">
+          <strong>Validación previa a la escritura.</strong> Antes de subir, se ejecutó el extractor en
+          modo lectura: 59.177 filas leídas, deduplicación aplicada y resultado
+          <strong>50.994 con solo dos tipos</strong>. El fix quedó confirmado con datos reales antes de
+          reescribir la tabla (<code>WRITE_TRUNCATE</code>).
+        </div>
+      </li>
+    </ul>
+    <div class="before-after" style="margin-top:12px;">
+      <span class="badge badge-red">4 categorías · 78,4% visible</span>
+      <span class="badge-arrow">→</span>
+      <span class="badge badge-green">2 categorías · 100% visible</span>
+    </div>
+  </div>
+
+  <!-- 4. La recarga -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-number">4</div>
+      <div class="section-title">Recarga de la base de datos</div>
+    </div>
+    <p style="font-size:11px; color:#475569; line-height:1.7; margin-bottom:12px;">
+      Corrida incremental desde la red del CUN con <code>gpt-4o</code> y las dos claves de OpenAI
+      (09:03:45 → 09:07:37). El respaldo previo ya existía y coincidía exactamente con el estado
+      anterior de la tabla, por lo que se decidiu <strong>no crear uno adicional</strong>.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Concepto</th><th>Valor</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Filas leídas del servidor de origen</td><td>59.177 (52.035 en formato ISO + 7.142 en formato español)</td></tr>
+        <tr><td>Duplicados eliminados</td><td>8.183 (13,8%)</td></tr>
+        <tr><td>Filas escritas en la base de análisis</td><td><strong>50.994</strong> (antes 49.996)</td></tr>
+        <tr><td>Llamadas nuevas del período</td><td>998 (14-sep → 20-sep: 590 ventas / 408 servicio)</td></tr>
+        <tr><td>Cobertura de la historia</td><td>10-oct-2025 → <strong>20-sep-2026</strong></td></tr>
+        <tr><td>Respaldo previo</td><td><code>..._backup_20260925</code> (49.996, reutilizado)</td></tr>
+        <tr><td>Pruebas automatizadas</td><td>37 / 37 correctas</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <strong>Consecuencia operativa.</strong> Con datos hasta el 20 de septiembre, la última semana
+      completa disponible es <strong>14 → 20 de septiembre</strong>: la condición de frescura que usa
+      el envío automático del reporte ya se cumpliría. El envío sigue <strong>en pausa</strong> por
+      decisión del usuario (programador de tareas pausado y los dos interruptores del proceso en 0).
+    </div>
+  </div>
+
+  <!-- 5. Verificación -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-number">5</div>
+      <div class="section-title">Verificación en la base de datos</div>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Control</th><th>Resultado</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Categorías de tipo de llamada</td><td>ventas 28.911 · servicio 22.083 (= 50.994); <code>mixto</code> = 0</td><td><span class="chip chip-done">OK</span></td></tr>
+        <tr><td>Variantes sin normalizar</td><td><code>venta</code> = 0 · <code>servicios</code> = 0 · tipo vacío = 0</td><td><span class="chip chip-done">OK</span></td></tr>
+        <tr><td>Esquema de la tabla</td><td>Idéntico al respaldo (57 columnas; fecha en entero nanosegundo) — contrato del dashboard intacto</td><td><span class="chip chip-done">OK</span></td></tr>
+        <tr><td>Integridad de registros</td><td>0 llamadas sin asesor identificado · 27 asesores distintos</td><td><span class="chip chip-done">OK</span></td></tr>
+        <tr><td>Dirección de llamada (sin tocar)</td><td>Entrante 5.946 · Saliente 20.019 · sin dato 25.029 (49%)</td><td><span class="chip chip-done">OK</span></td></tr>
+        <tr><td>Transcripciones con IA</td><td>Sin regresión: 1.034 fragmentos de audio demasiado cortos sin separar hablantes (esperado)</td><td><span class="chip chip-done">OK</span></td></tr>
+        <tr><td>Pruebas del backend</td><td>37 / 37 correctas</td><td><span class="chip chip-done">OK</span></td></tr>
+        <tr><td>Despliegue</td><td>No requerido (solo cambian los datos); el dashboard los refleja en ≤ 5 min por el caché</td><td><span class="chip chip-fix">N/A</span></td></tr>
+      </tbody>
+    </table>
+    <div class="subsection" style="margin-top:18px;">
+      <div class="subsection-title">Indicadores de referencia (28-sep-2026)</div>
+      <table>
+        <tbody>
+          <tr><td>Contacto efectivo</td><td>27,9% — 14.236 contactadas / 36.758 sin contacto (100% del total)</td></tr>
+          <tr><td>Saludo completo</td><td>425 (Sí + Parcial: 8.122)</td></tr>
+          <tr><td>Posibles ventas (inferidas del texto)</td><td>886 — cifra inflada, no equivale a venta real</td></tr>
+          <tr><td>Estatus del marcador (46.191 con dato)</td><td>Contestada 35.172 · No contestada 11.017 · Ocupada 1</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 6. Consecuencias -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-number">6</div>
+      <div class="section-title">Consecuencias y pendientes</div>
+    </div>
+    <ul class="fix-list">
+      <li class="fix-item data">
+        <div class="fix-icon">📊</div>
+        <div class="fix-text">
+          <strong>Los informes segmentados ya son confiables.</strong> Los dos PDF (Ventas y Servicio, con
+          apartados Entrantes / Salientes / «Sin dirección») partían de un filtro contaminado por
+          «mixto»; ahora el override por tipo devuelve el total real.
+        </div>
+      </li>
+      <li class="fix-item fix">
+        <div class="fix-icon">⚠️</div>
+        <div class="fix-text">
+          <strong>Deuda técnica visible (fuera de alcance).</strong> El filtro «Tipo de llamada»
+          (<code>tipo_llamada</code> de la interfaz) filtra la columna de negocio (<code>tipo</code>) y el
+          filtro de seguimiento filtra la de dirección (<code>Tipo_Llamada</code>): la pareja está
+          <strong>invertida</strong> y es una trampa de mantenimiento. Renombrarla exige despliegue de
+          backend y de interfaz.
+        </div>
+      </li>
+      <li class="fix-item ok">
+        <div class="fix-icon">📚</div>
+        <div class="fix-text">
+          <strong>Documentación actualizada.</strong> Contexto del proyecto, memoria de sesión, índice de
+          pendientes, historial de cargas, ficha del envío semanal e informe de esta sesión.
+          <strong>Nada se commiteó todavía</strong> (pendiente de aprobación).
+        </div>
+      </li>
+    </ul>
+    <table style="margin-top:16px;">
+      <thead>
+        <tr><th>Siguiente paso</th><th>Responsable</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Generar los 2 informes PDF segmentados (14 → 20 de septiembre), sin correo</td><td>DivergencyAI</td><td><span class="chip chip-pending">SIGUIENTE</span></td></tr>
+        <tr><td>Commit y publicación de los cambios de esta sesión</td><td>DivergencyAI</td><td><span class="chip chip-pending">ESPERANDO OK</span></td></tr>
+        <tr><td>Reactivar el envío automático del reporte (ya no falta frescura de datos)</td><td>Decisión del usuario</td><td><span class="chip chip-pending">EN PAUSA</span></td></tr>
+        <tr><td>Venta real desde el CRM (reemplaza la cifra inferida de 886)</td><td>CL Tiene / CUN</td><td><span class="chip chip-pending">BLOQUEADO</span></td></tr>
+        <tr><td>Incluir las llamadas no contestadas en la base de origen</td><td>Juan Manuel (CUN)</td><td><span class="chip chip-pending">PENDIENTE</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span>CLTiene Dashboard · DivergencyAI SAS</span>
+    <span>Informe de Sesión — 28 de Septiembre de 2026</span>
+    <span>Confidencial</span>
+  </div>
+
+</div>
+</body>
+</html>

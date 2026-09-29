@@ -198,6 +198,21 @@ blockquote { border-left: 3pt solid #FC3276; margin: 8pt 0; padding: 4pt 12pt; c
 .panel p { margin: 6pt 0; }
 .panel ul + p, .panel ol + p { font-weight: bold; color: #1e293b; }
 
+/* Segmentación por dirección (informes segmentados): cada bloque arranca en página
+   nueva y lleva su encabezado. El script solo marca los bloques 2..N. */
+.bloque { break-before: page; }
+.bloque h1.portadilla {
+    font-size: 15pt; margin: 0 0 2pt; padding: 0 0 6pt; background: none;
+    border-bottom: 2.5pt solid #FC3276;
+}
+.bloque p.portadilla-sub {
+    font-size: 9pt; color: #787878; margin: 0 0 12pt; font-style: italic;
+}
+.bloque-nota {
+    background: #f8fafc; border: 1pt solid #e2e8f0; border-radius: 7px;
+    padding: 8pt 12pt; margin: 0 0 12pt; font-size: 9pt; color: #475569;
+}
+
 /* Tablas: encabezado rosa, zebra, col0 izquierda, numéricas derecha, semáforo centrado */
 table { width: 100%; border-collapse: collapse; margin: 6pt 0 14pt; font-size: 9pt; }
 th { background: #FC3276; color: #ffffff; font-weight: bold; padding: 7pt 10pt; }
@@ -213,11 +228,21 @@ tr:nth-child(even) td { background: #f8fafc; }
 """
 
 
-def html_a_pdf(html_fragmento: str, periodo: str = "", logo_path: str | None = None) -> bytes:
+def html_a_pdf(
+    html_fragmento: str,
+    periodo: str = "",
+    logo_path: str | None = None,
+    titulo: str = "Reporte Estratégico de Operaciones",
+    subtitulo: str = "CL Tiene Soluciones - Agente IA PRO (DivergencyAI SAS)",
+) -> bytes:
     """Convierte el fragmento HTML del reporte a bytes PDF (WeasyPrint).
 
     Diseño idéntico al PDF del frontend (ReporteCompleto.jsx): banda rosa con
     título + logo, línea de período, panel de resumen, badges y pie numerado.
+
+    `titulo`/`subtitulo` son opcionales: con los valores por defecto la salida es
+    idéntica a la del reporte semanal (los usa el informe segmentado para
+    distinguir "Reporte de VENTAS" de "Reporte de SERVICIO").
     """
     from weasyprint import HTML
 
@@ -233,13 +258,13 @@ def html_a_pdf(html_fragmento: str, periodo: str = "", logo_path: str | None = N
 
     doc = f"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"/>
-<title>Reporte Ejecutivo CL Tiene</title>
+<title>Reporte Ejecutivo CLTiene</title>
 <style>{_CSS}</style>
 </head><body>
 <div class="band">
   <div>
-    <div class="band-title">Reporte Estratégico de Operaciones</div>
-    <div class="band-sub">CL Tiene Soluciones - Agente IA PRO (DivergencyAI SAS)</div>
+    <div class="band-title">{titulo}</div>
+    <div class="band-sub">{subtitulo}</div>
   </div>
   {img_html}
 </div>

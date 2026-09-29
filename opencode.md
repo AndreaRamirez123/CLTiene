@@ -4,18 +4,100 @@
 > (contexto permanente del proyecto) y documenta **solo lo ejecutado en cada sesión** +
 > pendientes para la siguiente, para seguimiento e informes. Actualizar al terminar cada sesión.
 
-## Estado al cierre (25-sep-2026)
+## Estado al cierre (29-sep-2026)
 
-- **BD BigQuery:** 49.996 filas · historia **2025-10-10 → 2026-09-09** · 0 `Cuenta NULL` · 27 asesores.
-  El SQL CUN **no tiene datos después del 09-sep** → la carga del 25-sep fue un **no-op** (la tabla no cambió).
-- **Envío semanal: APAGADO** (decisión del usuario) — Scheduler `cltiene-reporte-semanal` **PAUSADO** y job
-  `cltiene-envio-reporte` con `REPORTE_ENABLED=0` + `ALERTA_ENABLED=0`. `cltiene_reportes_enviados` **vacía**:
-  nunca se ha enviado el reporte real a Steven. Ver "Ejecutado 2026-09-25".
-- **Pendiente en curso:** quitar el `mixto` del mapeo (`subir_datos.py` + `procesador.py`) y generar **2 informes
-  PDF locales** (Ventas y Servicio, cada uno con Entrantes/Salientes) — sin correo.
-- **Informe de sesión** más reciente: `informe_sesion_2026-09-23.html` (portada oscura `#FC3276`, 6 secciones).
+- **BD BigQuery:** **50.994 filas** · historia **2025-10-10 → 2026-09-20** · 0 `Cuenta NULL` · 0 `tipo NULL` · 27 asesores. **Sin cambios hoy** (la del 28-sep ya estaba al día, y el origen tampoco avanzó).
+- **TMO `N/D` RESUELTO** — era un bug de semáforo, no un dato malo: sin duración medible ahora sale `⚪` y el contexto declara la cobertura. **Verificado en el origen**: las 189 entrantes de la semana traen `NULL` en `Tiempo␣␣de␣Conversacion` **y** en `Tiempo␣␣de␣Llamada` ⇒ el archivo de entradas no trae la columna. Suite **65 tests**.
+- **Correo de AUTOMATIZACIÓN ENVIADO** a `Juan_marin@` + `Juan_ganicac@` (29-sep), **sin fecha de reunión aún**. El objeto son las **DOS etapas de código** (la del COE —hoy un notebook— y la nuestra). 7 preguntas abiertas. Tono de escalada, sin copia a Fabián. Ver "Ejecutado en esta sesión".
+- **Envío semanal: APAGADO** (decisión del usuario, sin cambios) — Scheduler `cltiene-reporte-semanal` **PAUSADO** y job
+  `cltiene-envio-reporte` con `REPORTE_ENABLED=0` + `ALERTA_ENABLED=0`. `cltiene_reportes_enviados` **vacía**.
+  ⚠️ La BD llegó al 20-sep ⇒ el **preflight A se cumpliría** (semana a reportar: **14-sep → 20-sep**).
+- **Pendiente en curso:** reenviar los **3 informes con el fix del TMO** (solo con OK explícito — el correo de prueba del 28-sep lleva las versiones previas) + el **segundo correo** con los pedidos de datos sueltos.
+- **Informe de sesión** más reciente: `informe_sesion_2026-09-28.html`. Nota del día 29-sep: `CLTieneBobeda/Informes/2026-09-29 - Cambios del día.md`.
 
-## Ejecutado en esta sesión (25-sep-2026)
+## Ejecutado en esta sesión (29-sep-2026)
+
+### 1. Fix del TMO `N/D` (el semáforo 🔴 era falso)
+- **Síntoma:** los bloques de **llamadas entrantes** de los 3 informes salían con TMO `N/D` y semáforo **🔴 rojo**. No era mal desempeño: `AVG(dur_seg)` sobre un conjunto 100% NULL devuelve `NULL` y el semáforo coercionaba `None → 0`. Además el TMO general se calculaba sobre las 809 salientes y se presentaba como si fuera de las 998 (cobertura real 81,1%).
+- `back/helpers/utils.py` → el CTE `resumen` ahora trae `COALESCE(COUNTIF(dur_seg > 0), 0) AS tmo_n` (conteo de llamadas **con** duración) además del `AVG`; se derivan `tmo_sin_dato` y `tmo_cubierto` (`tmo_n / total`) → alimentan el contexto y el semáforo. **Sin llamada medible → `⚪`** en vez de 🔴. El contexto dice que **no se puede calcular** y que no debe interpretarse como mal desempeño; en el parcial declara `1:17 (promediado sobre 809 de 998 llamadas = 81,1% de cobertura; el resto son entrantes sin campo de duración)`. La leyenda de rangos incluye `⚪ sin dato`.
+- `back/api/ia/generar_reporte_completo.py` → prohibido inventar/estimar/juzgar un TMO `N/D`, y obligatorio citar la cobertura cuando sea parcial.
+- `back/reporte_pdf.py` **no necesitó cambio**: ya mapeaba `⚪` → `N/D` con badge gris desde el 28-sep.
+- **+5 tests** (`TestSemaforoTmoSinDato`) ⇒ suite **60 → 65**; `git diff --check` limpio.
+- **Regenerados los 3:** general `1:17` 🟡 (81,1% cobertura) · Ventas Entrantes `N/D` ⚪ / Salientes `1:18` 🟡 · Servicio Entrantes `N/D` ⚪ / Salientes `1:14` 🟡 — 4 / 6 / 6 páginas. Validados: cero `None`/`nan`/`N/A`, cero "Sin dirección", `rgb(15,23,42)` eliminado.
+
+### 2. 🔒 Verificación en el ORIGEN (SQL Server de la CUN) — solo lectura
+- Script temporal con guardas que rechazan cualquier palabra de escritura en el texto de la consulta (se eliminó al terminar). ODBC Driver 18 a 172.16.1.33. **Cero escrituras.**
+- **Origen, 14–20 sep:** `Salientes` 809 → `Tiempo␣␣de␣Conversacion` **809** y `Tiempo␣␣de␣Llamada` **809**. `Entrantes` 189 → **0 y 0**, con valor `NULL` (no cadena vacía) ⇒ el **archivo de origen de entradas no trae la columna**.
+- **Total 998** llamadas · 9 asesores · tope `2026-09-20 14:00:11` ⇒ cuadra exacto con los 3 informes. Cero filas nuevas ⇒ la BD ya estaba al día.
+- 🪤 **Trampa:** la columna se llama `Tiempo␣␣de␣Conversacion`, con **doble espacio**; con un solo espacio falla con `Invalid column name`. El pipeline la mapea bien (queda `Tiempo__de_Conversacion` en BigQuery), pero cualquier query manual la tropieza.
+- **Contraste:** el lote de oct-2025 (7.142 filas, sin dirección) **sí trae duración al 100%** ⇒ la columna existe y se llena; lo que falta es en el archivo de **entradas**. ⇒ **No hay de dónde sacar el TMO de las entrantes**, y Steven lo pidió como KPI. Pedido nuevo para Cristian/CL Tiene y Juan Manuel.
+
+### 3. 📧 Correo de automatización a los Juanes (29-sep) — enviado por el usuario
+- **Para:** `Juan_marin@cun.edu.co` + `Juan_ganicac@cun.edu.co` (ambos en *Para*, sin copia). **Sin fecha de reunión.**
+- **Corrección de encuadre:** el objetivo **no es solo nuestro pipeline**, sino **las dos etapas de código**. (a) **COE / Juan Manuel:** SFTP + STT + cruce + Ollama, hoy un **notebook** ⇒ hay que volverlo script parametrizable; es la parte difícil. (b) **nosotros:** `subir_datos.py` ya es script autónomo ⇒ `PythonOperator` sin reescribir nada.
+- **7 preguntas:** nodo **GPU/CUDA** para `faster-whisper` · **dónde vive Ollama** y si es alcanzable desde Airflow · **credenciales** de SFTP y BD · **salida a `api.openai.com` y BigQuery** (la más crítica tras la auditoría) · **secrets** · **dependencias/ODBC Driver 18** en la imagen · **gobernanza** del DAG.
+- **Quitado del borrador por decisión del usuario:** el split Frente 1 (código al DAG, con Excel manual) / Frente 2 (eliminar el Excel, depende de S3), y la pregunta del día de corte semanal. **Cierre en tono de escalada** ("reunión urgente", "escalar con quien corresponda", "solución definitiva").
+- ⚠️ **Riesgos a vigilar en la respuesta:** (1) al no conservar el split, "eliminar los Excel" puede leerse como "reemplaza el Excel por ContactVox", que **no está en manos de Juan Manuel** (depende de S3; Fabián ya tiene el hilo con Daniel Obando) — la respuesta es que el frente 1 sí lo destraba él; (2) **"los dos casos" es ambiguo** (las dos etapas *o* los dos problemas de datos) → aclarar en una línea en el primer reply.
+
+### 4. Decisiones tomadas (usuario) para este commit
+- **Los 3 PDF de `back/reportes_segmentados/` NO entran al repo** (salida de producción, regenerable con `--solo-pdf`) → se agregan al `.gitignore` junto a `reporte_semanal_dryrun.pdf`. **Los 2 HTML sidecar sí** (función de auditoría).
+- `informe_sesion_2026-09-28.html` entra en el **mismo commit** (la convención del repo es que los informes viven en la raíz).
+- **Segundo correo con los pedidos de datos** (WAP, NO ANSWER/BUSY, `Salientes→Saliente`, hora del filename, duración en entradas): **no se manda hoy** — el correo del 29-sep fue solo de automatización.
+
+## Ejecutado en la sesión anterior (28-sep-2026)
+
+> Estado al cierre de esa sesión: BigQuery **50.994 filas** (historia 2025-10-10 → **2026-09-20**, 27 asesores,
+> 0 `Cuenta NULL`); el SQL CUN volvió a avanzar tras el no-op del 25-sep. `mixto` eliminado y `tipo`
+> normalizado a **2 valores exactos** — ventas **28.911** / servicio **22.083** (los filtros por tipo ya ven el
+> 100% de las llamadas, antes escondían el 21,6%). **3 informes PDF** generados (general + ventas + servicio),
+> sin correo ni registro.
+
+### 1. Fix del bug `mixto` (2 archivos, 3 hunks)
+- `back/subir_datos.py` → el query principal usa `b.[tipo] AS tipo` (se eliminan el CTE `registros_unicos` y su
+  `INNER JOIN`). Verificado con queries que el JOIN devolvía **exactamente** las mismas 52.035 filas que el `WHERE`
+  ⇒ cero cambio en el conjunto de filas. Comentario explicativo agregado en el código.
+- `back/subir_datos.py` → una línea de normalización en `procesar()`, junto a la de `Tipo_Llamada`:
+  `df['tipo'] = df['tipo'].str.strip().str.lower().replace({'venta':'ventas','servicios':'servicio'})`
+  (el origen trae `venta` y `servicios` como variantes).
+- `back/api/upload/procesador.py` (legacy) → mismo simplificado del query + la misma normalización, para que el
+  endpoint muerto no reintroduzca el bug. Diff total: **+19 / −31 líneas** en 2 archivos.
+- `tipo` no lo lee ningún otro paso del pipeline (verificado con grep) → sin efectos colaterales.
+
+### 2. Recarga de la BD (49.996 → 50.994 filas)
+- **Pre-flight en seco antes de escribir** (decisión de seguridad): se corrió `cargar_desde_sql()` sin subir →
+  59.177 leídas, dedup 8.183, **50.994** y `tipo` ya en 2 valores ⇒ el fix se confirmó **antes** del `WRITE_TRUNCATE`.
+- **Sin backup nuevo** (decisión del usuario): `..._cltiene_llamadas_procesadas_backup_20260925` (49.996) **era el
+  estado exacto previo** ⇒ sirve de punto de rollback.
+- Corrida `$env:PYTHONIOENCODING='utf-8'; $env:MODELO_HABLANTES='gpt-4o'; python .\subir_datos.py` desde `back/`,
+  red CUN, 2 API keys. **09:03:45 → 09:07:37** (~4 min). Leídas 59.177 (52.035 ISO + 7.142 español) → dedup
+  **8.183 (13.8%)** → escritas **50.994**.
+- **37 tests OK** (`$env:PYTHONPATH='.'; python -m unittest discover -s tests`). ⚠️ El venv local no tenía
+  `fastapi` ⇒ `test_reporte_semanal` no importaba (fallo de entorno, no de código); se resolvió con
+  `python -m pip install fastapi` (0.141.1), sin tocar pandas.
+- Entorno: **Python 3.14.5, pandas 3.0.5** (el fix INTEGER-ns de `subir_bigquery()` aplica y se verificó),
+  pyodbc 5.3.0 / ODBC Driver 18, sqlalchemy 2.0.54.
+
+### 3. Verificación post-carga (BigQuery)
+- `SELECT tipo, COUNT(*)` → **ventas 28.911 / servicio 22.083** (= 50.994). `mixto = 0`, `servicios = 0`, `venta = 0`, `tipo NULL = 0`.
+- **Schema idéntico al backup `_20260925`**: 57 columnas, `Fecha` y `fecha_carga` = **INTEGER ns** ⇒ contrato
+  `DIV(Fecha,1000)` del backend intacto (el riesgo del 16-sep).
+- `Cuenta NULL = 0` · 27 asesores · historia 2025-10-10 → **2026-09-20**.
+- `Tipo_Llamada` **sin cambios**: Entrante 5.946 / Saliente 20.019 / NULL 25.029 (49%) ⇒ los 998 nuevos traeían todos dirección.
+- **Sin regresión de `Transcripcion_V4`:** filas con texto pero sin V4 959 → 1.034 (fragmentos STT cortos, esperado).
+- **KPIs de referencia (28-sep):** contacto efectivo **27,9%** (14.236 Contactado / 36.758 Sin Contacto = 100% del total)
+  · saludo completo `Sí` 425 (Sí+Parcial 8.122) · posibles ventas (regex) 886 · marcador (46.191 con dato):
+  ANSWERED 35.172 / NO ANSWER 11.017 / BUSY 1.
+- Cobertura tipo × dirección post-fix: ventas 1.414 entrantes / 13.334 salientes / 14.163 NULL; servicio 4.532 / 6.685 / 10.866.
+
+### 4. Documentación actualizada (sin commit — no hay aprobación)
+- `CLAUDE.md` → nueva sección "Sesión 2026-09-28" + el hallazgo del 25-sep marcado como resuelto.
+- Bóveda: `11 - Pendientes` (cerrado el `mixto`, fechas al 20-sep), `12 - Historial` (fila 28-sep + sección del bug),
+  `13 - Envío Semanal` (roadmap actualizado, preflight A cumplido), `Informes/informe_sesion_2026-09-28.html`.
+- `opencode.md` (este archivo) + `Trabajo con IA/01 - Perfil de opencode.md` (memoria de sesión 6).
+- ⚠️ **Trampa latente NO tocada (fuera de alcance):** la pareja `tipo_llamada`→columna `tipo` (negocio) y
+  `seguimiento_llamada`→columna `Tipo_Llamada` (dirección) está **invertida**; renombrarla exige deploy backend + frontend.
+
+## Ejecutado en la sesión anterior (25-sep-2026)
 
 ### 1. Apagado del envío automático (protecciones, decisión del usuario)
 - `gcloud scheduler jobs pause cltiene-reporte-semanal` (region `us-central1`) → estado **PAUSED**.
@@ -126,32 +208,51 @@
 ## Pendientes puntuales para la siguiente sesión
 
 ### Nuestro lado (DivergencyAI / Diego) — **prioridad de esta semana**
-- [ ] **Quitar `mixto` del mapeo** en `back/subir_datos.py` (`b.[tipo] AS tipo` + eliminar CTE/JOIN) **y** en
-      `back/api/upload/procesador.py:85-88`; normalizar `servicios` → `servicio`. Recargar incremental
-      (backup `..._backup_20260925` listo) y verificar `mixto = 0` sin cambiar el total ni `Tipo_Llamada`.
-- [ ] **Generar 2 informes PDF locales** (Ventas / Servicio), cada uno con **Entrantes**, **Salientes** y
-      **"Sin dirección"**, periodo **2026-08-31 → 2026-09-06**: agregar el desglose por `Tipo_Llamada` a
-      `get_data_context()`, quitar "Posibles ventas" del prompt en modo servicio, y un script nuevo con
-      overrides de tipo/dirección. **Sin SMTP, sin registro de envíos, sin tocar el job.**
+- [x] **Quitar `mixto` del mapeo** (`back/subir_datos.py` + `back/api/upload/procesador.py`) + normalizar
+      `servicios` → `servicio`, recargar y verificar `mixto = 0` → **HECHO 2026-09-28** (50.994 filas, 2 tipos).
+- [x] **Generar los informes PDF locales** = **3 informes**: el **general** (el que va al correo) + los 2
+      **segmentados** (ventas / servicio), estos últimos con apartados **Entrantes** y **Salientes** (el bucket
+      "Sin dirección" se **excluyó** por decisión del usuario, aunque el histórico tiene 49% sin dirección),
+      periodo **2026-09-14 → 2026-09-20** → **HECHO 2026-09-28**. Ventas 14/576 · Servicio 175/233 (998 en total).
+      Modo Servicio con **0 menciones de ventas** (Tablero de 7 filas). **Sin SMTP, sin registro, sin tocar el
+      job/scheduler.** Script segmentador: `back/generar_reportes_segmentados.py` (`--solo-html`, `--solo-pdf`,
+      `--forzar`, `--tipos`, `--direcciones`); validador `back/tests/validar_reportes_segmentados.py` (cubre los 3).
+- [x] **Arreglar el TMO `N/D` de los entrantes** (era semáforo 🔴 falso) + verificar en el origen →
+      **HECHO 2026-09-29**. `tmo_n`/`tmo_cubierto`, `⚪` en vez de 🔴, cobertura declarada. **65 tests OK.**
+- [x] **Correo de automatización a los Juanes** (las 2 etapas de código + 7 preguntas) → **HECHO 2026-09-29**,
+      enviado por el usuario. **Pendiente: que agenden la reunión.**
+- [ ] **Reenviar los 3 informes con el fix del TMO** — solo con OK explícito (el correo de prueba del 28-sep
+      lleva las versiones previas al fix).
+- [ ] **Segundo correo con los pedidos de datos sueltos** — llave WAP, NO ANSWER/BUSY, `Salientes→Saliente`,
+      hora del filename, y el **campo de duración ausente en el Excel de entradas** (nuevo, verificado en origen).
 - [ ] **Reactivar el envío automático** solo con OK explícito: `gcloud scheduler jobs resume` +
-      `REPORTE_ENABLED=1` (hoy: PAUSADO / `REPORTE_ENABLED=0` / `ALERTA_ENABLED=0`).
+      `REPORTE_ENABLED=1` (hoy: PAUSADO / `REPORTE_ENABLED=0` / `ALERTA_ENABLED=0`). Ya no falta frescura de datos.
 - [ ] **Informe técnico v3.4:** portada/footer, pestaña 7 "Prueba de Saludos", tablas stale
       (KPIs/embudo), sección Despliegue (auth + min-instances + job/scheduler), sección
       "Actualizaciones Sep-2026", limitaciones. Sincronizar copia en `CLTieneBobeda\Documentos\`.
-- [ ] **Commit/push pendientes:** `informe_sesion_2026-09-23.html`, `CLAUDE.md` y `opencode.md`.
+- [ ] **Renombrar la pareja invertida** `tipo_llamada`→`tipo` (negocio) y `seguimiento_llamada`→`Tipo_Llamada`
+      (dirección): es la trampa latente más confusa del esquema. Requiere deploy backend + frontend.
 - [ ] **Partir el monolito** `subir_datos.py` (~1.130 líneas) en módulos · `clear_cache()` al final del pipeline.
 - [ ] Decidir **migración del remote git** a `https://github.com/AndreaRamirez123/CLTiene.git`
       (la URL vieja avisa movida).
 
-### Lado CUN / CL Tiene (upstream) — sin cambios
+### Lado CUN / CL Tiene (upstream)
 - [ ] **Venta real** (Zoho `Cerrado Ganado`): sigue **no enlazable a una llamada** (Cristian Galeano, 21-sep:
       "la llamada no está enlazada a un caso en Zoho"). Cristian pasará los datos separando Servicio/Ventas.
-- [ ] **Juan Manuel (CUN):** cargar Excel nuevos al SQL (la BD está parada en 09-sep) · incluir NO ANSWER/BUSY ·
-      mejorar STT (large-v3, beam_size, VAD) · parsear la hora real del filename (arregla Hora Pico 00:00) ·
-      cruce por llave WAP (~40% pérdida).
+- [ ] **Juan Manuel (CUN):** cargar Excel nuevos al SQL (la BD ya llegó sola al **20-sep** → siguiente corte) ·
+      incluir NO ANSWER/BUSY · mejorar STT (large-v3, beam_size, VAD) · parsear la hora real del filename (arregla
+      Hora Pico 00:00) · cruce por llave WAP (~40% pérdida) · **`Salientes` → `Saliente`** (prometido en jul, sin aplicar).
+- [ ] **Juan Manuel (CUN) — pedidos NUEVOS del 29-sep:**
+  - [ ] **Añadir el campo de duración al Excel de ENTRADAS** (verificado en origen: 189/189 entrantes con `NULL`
+        en `Tiempo␣␣de␣Conversacion` **y** `Tempo␣␣de␣Llamada`; el lote oct-2025 sí lo trae al 100%). Sin eso el
+        TMO de las entrantes no existe, y Steven lo pidió como KPI. Coordinar con Cristian.
+  - [ ] **Convertir el notebook en script parametrizable** (fecha de corte, reintentos, logs) para que un DAG lo orqueste.
+  - [ ] **Responder las 7 preguntas** del correo del 29-sep (nodo GPU, Ollama, credenciales SFTP/BD, egress a
+        OpenAI/BigQuery, secrets, dependencias/ODBC, gobernanza) y **agendar la reunión**.
 - [ ] **S3:** agregar cédula del cliente al origen (pendiente respuesta).
 - [ ] **CL Tiene:** renombrar carpeta `ecendales` → `agenteN` (Edwin Cendales aparece).
-- [ ] **Santamaría:** migración a Airflow (eliminar Excel intermedios).
+- [ ] **Airflow** (Santamaría / infraestructura): eliminar Excel intermedios. Correo enviado el 29-sep; el bloqueo
+      real es de **entorno**, no de código. ⚠️ "Eliminar el Excel" (frente 2) depende de S3 y **no** de esta reunión.
 
 ## Inventario de herramientas / automatización usadas
 
@@ -168,4 +269,4 @@
 | Origen | **SQL Server CUN** 172.16.1.33 | ODBC Driver 18; solo lectura (regla: nunca escribir). |
 | Correo | **SMTP Gmail** | `divergencyai@gmail.com` (app password MFA) → Steven (reporte) / Juanes (alerta opcional). |
 | PDF | **WeasyPrint** | HTML→PDF con branding (pinned weasyprint==62.3 + pydyf==0.11.0). |
-| CLI | **gcloud CLI** | Reautenticado el 25-sep (`gcloud auth login`) tras expirar los tokens. |
+| CLI | **gcloud CLI** | ⚠️ **28-sep: el token volvió a expirar** y no se puede reautenticar en modo no interactivo (`Reauthentication failed. cannot prompt during non-interactive execution`) → `bq` no sirve; **BigQuery se sigue consultando con Python (ADC funciona)**. Reautenticar con `gcloud auth login` desde una terminal normal. |

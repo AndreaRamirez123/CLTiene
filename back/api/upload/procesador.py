@@ -33,15 +33,6 @@ def conectar_y_cargar():
     engine = create_engine(url)
 
     sql_query = text("""
-        WITH registros_unicos AS (
-            SELECT
-                cuenta,
-                TRY_CONVERT(datetime, fecha, 120) AS fecha,
-                COUNT(*) AS cant
-            FROM CUN_REPOSITORIO.coe.CLTIENE_LLAMADAS
-            WHERE TRY_CONVERT(datetime, fecha, 120) IS NOT NULL
-            GROUP BY cuenta, TRY_CONVERT(datetime, fecha, 120)
-        )
         SELECT
             TRY_CONVERT(datetime, b.Fecha, 120) AS Fecha,
             b.[Contacto (Identificacion - Nombre],
@@ -82,14 +73,9 @@ def conectar_y_cargar():
             b.[IDENTIFICACION],
             b.[fecha_carga],
             b.[transcripcion],
-            CASE
-                WHEN a.cant > 1 THEN 'mixto'
-                ELSE b.tipo
-            END AS tipo
+            b.[tipo] AS tipo
         FROM CUN_REPOSITORIO.coe.CLTIENE_LLAMADAS b
-        INNER JOIN registros_unicos a
-            ON a.cuenta = b.cuenta
-            AND a.fecha = TRY_CONVERT(datetime, b.fecha, 120)
+        WHERE TRY_CONVERT(datetime, b.Fecha, 120) IS NOT NULL
     """)
 
     with engine.connect() as conn:
@@ -204,6 +190,9 @@ def sanitizar_columnas(df):
 
 def procesar_dataframe(df, log=print):
     log(f"Filas cargadas: {len(df)}")
+
+    # El origen trae 'venta' y 'servicios' como variantes de 'ventas'/'servicio'.
+    df['tipo'] = df['tipo'].str.strip().str.lower().replace({'venta': 'ventas', 'servicios': 'servicio'})
 
     log("Detectando resultado de llamada...")
     df['Resultado_Llamada'] = df['transcripcion'].apply(detectar_resultado_llamada)
