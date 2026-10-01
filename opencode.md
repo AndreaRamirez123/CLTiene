@@ -4,7 +4,16 @@
 > (contexto permanente del proyecto) y documenta **solo lo ejecutado en cada sesión** +
 > pendientes para la siguiente, para seguimiento e informes. Actualizar al terminar cada sesión.
 
-## Estado al cierre (29-sep-2026)
+## Estado al cierre (01-oct-2026)
+
+- **BD BigQuery:** **50.994 filas** · historia **2025-10-10 → 2026-09-20** · 0 `Cuenta NULL` · 0 `tipo NULL` · 27 asesores. **Sin cambios hoy también**: el SQL Server de la CUN **no avanzó** desde el 28-sep (máx `2026-09-20 14:00:11`, crudo 59.177) ⇒ la corrida fue un **no-op de datos**, útil solo como validación end-to-end del pipeline con los fixes del 28/29-sep.
+- **Carga ejecutada** (09:28:32 → 09:29:43, **71 s**): `MODELO_HABLANTES=gpt-4o`, **1 sola API key** (el `.env` local ya no tiene `OPENAI_API_MUNDIAL_2`), cache de 23.165 transcripciones ⇒ fase IA de **1 s** y **0 llamadas a OpenAI ($0)**. Leídas 59.177 → dedup 8.183 (13,8%) → escritas 50.994. Backup previo: `..._backup_20261001` (**9º/10 backups**).
+- **Verificación post-carga OK:** schema **idéntico al backup** (57 columnas, `Fecha`/`fecha_carga` = **INTEGER ns** ⇒ contrato `DIV(Fecha,1000)` intacto) · `tipo` = **2 valores exactos** (ventas 28.911 / servicio 22.083; `mixto`=0, `servicios`=0, `venta`=0, NULL=0) · `Tipo_Llamada` sin cambios (NULL 25.029 / Saliente 20.019 / Entrante 5.946) · el **WHERE real de `filters()`** ejecutado en BigQuery para 14→20 sep devuelve **998** (590 ventas / 408 servicio) = el origen y los 3 informes · texto sin V4 1.034 (fragmentos STT, esperado) · **65 tests OK**.
+- 🔴 **Hallazgo nuevo (upstream):** el origen tiene un **hueco de 4 días** — 10, 11, 12 y 13-sep traen **0 llamadas** (y nada después del 20-sep). No es efecto fin de semana (la semana anterior sí tiene sábado 81 y domingo 22) ⇒ faltan ~700-900 llamadas. Mismo tipo de pérdida del cruce audio↔Excel → **sumarlo al segundo correo** de pedidos a Juan Manuel.
+- **Envío semanal: APAGADO** (sin cambios) — Scheduler PAUSADO, `REPORTE_ENABLED=0`, `ALERTA_ENABLED=0`, `cltiene_reportes_enviados` vacía. **Sin deploy, sin commit, cero escrituras al SQL Server.**
+- **Pendientes sin cambio:** reenviar los 3 informes con el fix del TMO (solo con OK), segundo correo de pedidos de datos, reactivar el envío, informe técnico v3.4.
+
+## Estado al cierre de la sesión anterior (29-sep-2026)
 
 - **BD BigQuery:** **50.994 filas** · historia **2025-10-10 → 2026-09-20** · 0 `Cuenta NULL` · 0 `tipo NULL` · 27 asesores. **Sin cambios hoy** (la del 28-sep ya estaba al día, y el origen tampoco avanzó).
 - **TMO `N/D` RESUELTO** — era un bug de semáforo, no un dato malo: sin duración medible ahora sale `⚪` y el contexto declara la cobertura. **Verificado en el origen**: las 189 entrantes de la semana traen `NULL` en `Tiempo␣␣de␣Conversacion` **y** en `Tiempo␣␣de␣Llamada` ⇒ el archivo de entradas no trae la columna. Suite **65 tests**.
@@ -15,7 +24,60 @@
 - **Pendiente en curso:** reenviar los **3 informes con el fix del TMO** (solo con OK explícito — el correo de prueba del 28-sep lleva las versiones previas) + el **segundo correo** con los pedidos de datos sueltos.
 - **Informe de sesión** más reciente: `informe_sesion_2026-09-28.html`. Nota del día 29-sep: `CLTieneBobeda/Informes/2026-09-29 - Cambios del día.md`.
 
-## Ejecutado en esta sesión (29-sep-2026)
+## Ejecutado en esta sesión (01-oct-2026)
+
+> Corrida de **validación end-to-end** (los datos no cambiaron) + verificación del ORIGEN que destapó el hueco del 10–13 sep.
+
+### 1. Pre-flight en seco (decisión de seguridad: no escribir a ciegas)
+- Origen (SQL Server CUN, **solo lectura**): crudo **59.177** (52.035 ISO + 7.142 en formato español de oct-2025), `MAX(Fecha)` = **2026-09-20 14:00:11**, idéntico al 28-sep.
+- `cargar_desde_sql()` **sin subir** → dedup 8.183 (13,8%) → **50.994** = exactamente lo que había en la tabla ⇒ se confirmó que la carga **no iba a traer nada** antes del `WRITE_TRUNCATE`.
+- `tipo` crudo con 4 variantes (ventas 28.731 / servicio 21.658 / servicios 425 / venta 180) → tras la normalización de `procesar()` queda en **ventas 28.911 / servicio 22.083** ⇒ el fix `mixto` del 28-sep sigue correcto.
+
+### 2. Backup + carga
+- **Backup:** `desarrollo-investigaciones.call_center.cltiene_llamadas_procesadas_backup_20261001`, 50.994 filas, 57 columnas, schema **idéntico** al de la tabla. Es el **9º** de la serie (`_20260709` → `_20261001`).
+  - ⚠️ El primer intento con `client.copy_table(...)` falló con `TypeError: Client.copy_table() got an unexpected keyword argument 'write_disposition'` (el parámetro no existe en esa firma) ⇒ se hizo con **DDL** `CREATE TABLE ... COPY ...`, que además es atómico.
+- **Carga:** `$env:PYTHONIOENCODING='utf-8'; $env:MODELO_HABLANTES='gpt-4o'; python .\subir_datos.py` desde `back/`, red CUN, **1 sola API key**.
+  - Cache de BigQuery **23.165** transcripciones → fase IA de **1 segundo** ⇒ **0 llamadas a OpenAI, $0**. (El "Nuevas/cambiadas: 25.739" del log son filas casi todas sin transcripción, como siempre.)
+  - Leídas 59.177 → dedup 8.183 (13,8%) → escritas **50.994** en **71 s** (09:28:32 → 09:29:43).
+
+### 3. Verificación post-carga (BigQuery)
+| Chequeo | Resultado |
+|---|---|
+| Filas / historia | 50.994 · 2025-10-10 → **2026-09-20** |
+| Asesores · `Cuenta` NULL | 27 · 0 |
+| `tipo` | ventas **28.911** · servicio **22.083** · `mixto`/`servicios`/`venta`/NULL = **0** |
+| `Tipo_Llamada` | NULL 25.029 (49%) · Saliente 20.019 · Entrante 5.946 — sin cambios |
+| Schema vs backup | **idéntico** (57 columnas) · `Fecha` y `fecha_carga` = **INTEGER ns** |
+| Filtro de fechas | 14→20 sep = **998** (590 ventas / 408 servicio) = origen y 3 informes |
+| Texto sin `Transcripcion_V4` | 1.034 (fragmentos STT de 1–9 chars, esperado) |
+| Tests | **65 OK** (`$env:PYTHONPATH='.'; python -m unittest discover -s tests`) |
+
+- **Truco reutilizable:** se ejecutó en BigQuery el `WHERE` que genera el backend de verdad — `FilterModel(fecha_desde, fecha_hasta, tipo_llamada).get_query()` devuelve `Fecha >= UNIX_MICROS(TIMESTAMP('2026-09-14')) * 1000 AND Fecha <= UNIX_MICROS(TIMESTAMP('2026-09-20 23:59:59')) * 1000 AND tipo = 'ventas'`. Si algún día el contrato `Fecha` INTEGER-ns se rompe, ese WHERE deja de filtrar bien y el conteo no cuadra con el origen ⇒ **es la prueba end-to-end más barata de la carga**.
+- ⚠️ Entorno: `get_table()` **no** acepta el nombre con backticks (el cliente los agrega) y `database.py` exige `GOOGLE_CLOUD_PROJECT` si no hay `.env` cargado; `UNIX_MICROS()` no acepta INT64 (hay que pasarle un `TIMESTAMP`).
+
+### 4. 🔴 Hallazgo: el ORIGEN tiene un hueco de 4 días (10–13 sep)
+
+```
+07-sep (lu)  74   │  10-sep (ju)   0  ←  14-sep (lu) 175
+08-sep (ma)  84   │  11-sep (vi)   0  ←  15-sep (ma) 168
+09-sep (mi)  74   │  12-sep (sa)   0  ←  16-sep (mi) 172
+                  │  13-sep (do)   0  ←  17-sep 155 / 18-sep 215 / 19-sep 80 / 20-sep 33
+```
+
+- **No es fin de semana** (la semana anterior sí tiene sábado 81 y domingo 22) ⇒ faltan **jue+vie+sáb+dom** ≈ 700-900 llamadas, y **nada después del 20-sep**.
+- Es el mismo tipo de pérdida upstream ya conocida (cruce audio↔Excel con llave de 3 variables) → **sumarlo al segundo correo** de pedidos de datos a Juan Manuel.
+- El 20-sep trae solo **33** llamadas (tope 14:00) ⇒ día incompleto, aunque la semana 14→20 sí da las 998 de los informes.
+
+### 5. Documentación
+- `CLAUDE.md` → nueva sección "Sesión 2026-10-01".
+- Bóveda: `11 - Pendientes` (hueco upstream), `12 - Historial` (fila 01-oct), `Informes/2026-10-01 - Cambios del día.md` + índice, y `Trabajo con IA/01 - Perfil de opencode.md` (memorías de sesión **7ª y 8ª**: se añadió la del 29-sep, que faltaba).
+- ⚠️ El código de las sesiones 28/29-sep **ya está commiteado** (`b060481`). Lo de hoy son **solo documentos**
+  (`CLAUDE.md` + `opencode.md`), pendientes de commit a la espera de aprobación.
+- 🧹 `.gitignore` cubre `back/reportes_segmentados/*.pdf` pero **no** los `.txt` (subproductos del validador):
+  `reporte_{general,ventas,servicio}_2026-09-14_2026-09-20.txt` aparecen como untracked. Decidir si se ignoran
+  o se borran (no se tocó nada sin OK).
+
+## Ejecutado en la sesión anterior (29-sep-2026)
 
 ### 1. Fix del TMO `N/D` (el semáforo 🔴 era falso)
 - **Síntoma:** los bloques de **llamadas entrantes** de los 3 informes salían con TMO `N/D` y semáforo **🔴 rojo**. No era mal desempeño: `AVG(dur_seg)` sobre un conjunto 100% NULL devuelve `NULL` y el semáforo coercionaba `None → 0`. Además el TMO general se calculaba sobre las 809 salientes y se presentaba como si fuera de las 998 (cobertura real 81,1%).
@@ -239,7 +301,8 @@
 ### Lado CUN / CL Tiene (upstream)
 - [ ] **Venta real** (Zoho `Cerrado Ganado`): sigue **no enlazable a una llamada** (Cristian Galeano, 21-sep:
       "la llamada no está enlazada a un caso en Zoho"). Cristian pasará los datos separando Servicio/Ventas.
-- [ ] **Juan Manuel (CUN):** cargar Excel nuevos al SQL (la BD ya llegó sola al **20-sep** → siguiente corte) ·
+- [ ] **Juan Manuel (CUN):** cargar Excel nuevos al SQL (**🔴 la BD no avanza desde el 20-sep y tiene un hueco de
+      4 días: 10, 11, 12 y 13-sep con 0 llamadas, ≈700-900 perdidas — verificado en el origen el 01-oct**) ·
       incluir NO ANSWER/BUSY · mejorar STT (large-v3, beam_size, VAD) · parsear la hora real del filename (arregla
       Hora Pico 00:00) · cruce por llave WAP (~40% pérdida) · **`Salientes` → `Saliente`** (prometido en jul, sin aplicar).
 - [ ] **Juan Manuel (CUN) — pedidos NUEVOS del 29-sep:**
@@ -258,7 +321,7 @@
 
 | Categoría | Herramienta | Detalle |
 |---|---|---|
-| Base de datos | **BigQuery** (Google) | Tabla `desarrollo-investigaciones.call_center.cltiene_llamadas_procesadas` + **9 backups** (dates 20260709 → 20260925). `Fecha` INTEGER ns → `DATETIME(TIMESTAMP_MICROS(DIV(Fecha,1000)))`. |
+| Base de datos | **BigQuery** (Google) | Tabla `desarrollo-investigaciones.call_center.cltiene_llamadas_procesadas` + **10 backups** (dates 20260709 → 20261001). `Fecha` INTEGER ns → `DATETIME(TIMESTAMP_MICROS(DIV(Fecha,1000)))`. El backup se crea con **DDL `CREATE TABLE ... COPY`**, no con `copy_table(write_disposition=...)` (no existe ese parámetro). |
 | Backend | **Cloud Run** `cltiene-backend` | FastAPI, `min-instances=1` (sin cold start), CORS restringido, auth Firebase. |
 | Envío semanal | **Cloud Run Job** `cltiene-envio-reporte` | Corre `python enviar_reporte_semanal.py` (WeasyPrint PDF + SMTP). ⚠️ **25-sep: `REPORTE_ENABLED=0`** (apagado por decisión del usuario). |
 | Programación | **Cloud Scheduler** `cltiene-reporte-semanal` | `0 8-18 * * 1-5`, tz `America/Bogota`. ⚠️ **25-sep: PAUSADO** (`gcloud scheduler jobs resume` para revertir). |

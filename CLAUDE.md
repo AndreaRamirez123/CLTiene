@@ -916,6 +916,57 @@ Al revisar el ChatVisor pueden aparecer dos problemas distintos con causas y sol
 - **Informes:** 3 regenerados con el fix. Las versiones corregidas **NO se han reenviado** (el correo de prueba del 28-sep lleva las previas al fix) — reenviar solo con OK explícito.
 - **Envío semanal: APAGADO**, sin cambios. **SQL Server: cero escrituras.** **Sin deploy.**
 
+## Sesión 2026-10-01 — Carga run8 (no-op de datos) + 🔴 hueco de 4 días en el ORIGEN
+
+> Corrida de **validación end-to-end** del pipeline con los fixes del 28/29-sep. **Los datos NO cambian:**
+> el SQL Server de la CUN no avanzó desde el 28-sep. Sin deploy, sin commit, sin tocar el job/scheduler.
+
+### 1. Pre-flight en seco — la carga NO iba a traer nada
+- **Origen:** crudo **59.177** (52.035 ISO + 7.142 en formato español de oct-2025), `MAX(Fecha)` = **2026-09-20 14:00:11** — idéntico al 28-sep.
+- `cargar_desde_sql()` corrido **sin subir** → dedup 8.183 (13,8%) → **50.994** = exactamente lo que había en BigQuery.
+- `tipo` crudo trae 4 variantes (ventas 28.731 / servicio 21.658 / servicios 425 / venta 180) → tras la normalización de `procesar()` queda en **ventas 28.911 / servicio 22.083** = idéntico a la tabla ⇒ el fix `mixto` sigue correcto.
+- ⇒ **La BD no queda más fresca.** Refrescarla depende de que Juan Manuel cargue el Excel al SQL (ver §4).
+
+### 2. Backup + carga
+- **Backup:** `call_center.cltiene_llamadas_procesadas_backup_20261001` (50.994 filas, 57 columnas, schema **idéntico** al de la tabla) → punto de rollback. Es el **9º** backup; la serie va de `_20260709` a `_20261001`.
+- **Carga** (09:28:32 → 09:29:43, **71 s**): `python .\subir_datos.py` con `MODELO_HABLANTES=gpt-4o`, desde `back/`, red CUN, **1 sola API key** (el `.env` local ya no tiene `OPENAI_API_MUNDIAL_2`).
+  - Cache de BigQuery: **23.165** transcripciones ya procesadas → fase IA de **1 segundo** ⇒ **0 llamadas a OpenAI, $0**. (El "Nuevas/cambiadas: 25.739" del log son filas casi todas sin transcripción, como siempre.)
+  - Leídas 59.177 → dedup 8.183 (13,8%) → escritas **50.994**.
+
+### 3. Verificación post-carga (BigQuery)
+
+| Chequeo | Resultado |
+|---|---|
+| Filas / historia | **50.994** · 2025-10-10 → **2026-09-20** |
+| Asesores · `Cuenta` NULL | **27** · **0** |
+| `tipo` | **2 valores exactos**: ventas **28.911** · servicio **22.083** (`mixto`=0, `servicios`=0, `venta`=0, NULL=0) |
+| `Tipo_Llamada` | NULL 25.029 (49%) · Saliente 20.019 · Entrante 5.946 — sin cambios |
+| **Schema vs backup** | **idéntico** (57 columnas) · `Fecha` y `fecha_carga` = **INTEGER ns** ⇒ contrato `DIV(Fecha,1000)` intacto |
+| Filtro de fechas (WHERE real de `filters()`) | 14→20 sep = **998** (590 ventas / 408 servicio) = el conteo del origen y de los 3 informes |
+| Columnas clave | `Resultado_Llamada`, `efectiva`, `Saludo_Completo`, `Tiempo__de_Conversacion`, `Estado_de_la_LLamada`, `transcripcion` presentes |
+| Texto sin `Transcripcion_V4` | 1.034 (fragmentos STT de 1–9 chars, esperado, no bug) |
+| Tests | **65 OK** |
+
+> Truco de verificación útil: se ejecutó en BigQuery el `WHERE` que genera el backend de verdad
+> (`FilterModel(fecha_desde, fecha_hasta, tipo_llamada).get_query()`) → si el contrato `Fecha` INTEGER-ns se
+> rompe, ese WHERE deja de filtrar bien y el conteo no cuadra con el origen.
+
+### 4. 🔴 Hallazgo: el ORIGEN tiene un hueco de 4 días (10–13 sep)
+
+```
+07-sep (lu)  74   │  10-sep (ju)   0  ←  14-sep (lu) 175
+08-sep (ma)  84   │  11-sep (vi)   0  ←  15-sep (ma) 168
+09-sep (mi)  74   │  12-sep (sa)   0  ←  16-sep (mi) 172
+                  │  13-sep (do)   0  ←  17-sep (ju) 155 / 18-sep (vi) 215 / 19-sep 80 / 20-sep 33
+```
+
+- **No es efecto fin de semana:** la semana anterior **sí** tiene sábado (81) y domingo (22). Faltan **jue+vie+sáb+dom** ≈ 700-900 llamadas, y **nada después del 20-sep**.
+- ⇒ Es el mismo tipo de pérdida upstream ya conocida (cruce audio↔Excel con llave de 3 variables) → **sumar al segundo correo** de pedidos de datos a Juan Manuel.
+- El 20-sep solo trae **33** llamadas (tope 14:00) ⇒ ese día está **incompleto**, aunque la semana 14→20 sí da las 998 de los informes.
+
+### 5. Estado al cierre
+- **BD:** 50.994 filas, al día con el origen. **Envío semanal: APAGADO** (sin cambios). **SQL Server: cero escrituras** (solo `SELECT`). **Sin deploy, sin commit.** Nada de esto depende de un cambio nuestro.
+
 ## Asesores con datos "cortados" — SOLO Edwin es un problema real (verificado 2026-07-14)
 
 Al filtrar por asesor + fechas recientes, muchos asesores no aparecen en el dropdown "Nombre del Asesor"
